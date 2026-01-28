@@ -205,7 +205,11 @@ if uploaded_file is not None:
                     normalized_points = normalize_points(ordered_points, target_size=2.0)
 
                     # Extruir a 3D
-                    vertices, faces = extrude_polygon(normalized_points, height=extrusion_height)
+                    vertices, faces = extrude_polygon(
+                        normalized_points, 
+                        height=extrusion_height,
+                        triangulate=True  # ¡Importante para formas cóncavas!
+                    )
 
                     # Crear malla Plotly
                     mesh_data = create_plotly_mesh(
