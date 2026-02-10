@@ -4,6 +4,7 @@ import numpy as np
 import plotly.graph_objects as go
 from PIL import Image
 from modules.visualization import generar_cubo_3d
+from modules.command_parser import parse_commands
 from modules.image_processing import (
     convertir_a_escala_grises,
     aplicar_desenfoque_gaussiano,
@@ -47,7 +48,7 @@ def procesar_imagen(image_array, kernel_size, threshold1, threshold2):
 
 # ============ INTERFAZ PRINCIPAL ============
 st.title("Motor de Vectorización de Imágenes y Renderizado Procedural")
-tab_vector, tab_primitives = st.tabs(["🖼️ Vectorizador de Imagen", "📐 Generador de Figuras Primitivas"])
+tab_vector, tab_primitives, tab_code = st.tabs(["🖼️ Vectorizador de Imagen", "📐 Generador de Figuras Primitivas", "⌨️ Editor por Código"])
 
 with tab_vector:
     st.markdown("Carga una imagen JPG/PNG")
@@ -210,3 +211,44 @@ with tab_primitives:
             fig_p = go.Figure(data=[go.Mesh3d(x=v[:,0], y=v[:,1], z=v[:,2], i=i, j=j, k=k, **m_args)])
             fig_p.update_layout(scene=dict(aspectmode='cube'), margin=dict(l=0, r=0, b=0, t=0), height=500)
             st.plotly_chart(fig_p, use_container_width=True)
+
+with tab_code:
+    st.subheader("⌨️ Editor de Código para Figuras 3D")
+
+    example_code = """
+    # Ejemplo de comandos
+        cube
+        sphere
+        prisma n=8
+        cylinder
+        """
+
+    code = st.text_area(
+        "Escribí comandos para generar figuras 3D:",
+        value=example_code,
+        height=300
+    )
+
+    if st.button("▶ Ejecutar código"):
+        try:
+            figures = parse_commands(code)
+
+            for v, i, j, k in figures:
+                fig = go.Figure(data=[
+                    go.Mesh3d(
+                        x=v[:,0], y=v[:,1], z=v[:,2],
+                        i=i, j=j, k=k,
+                        opacity=0.9,
+                        color="lightblue",
+                        flatshading=False
+                    )
+                ])
+                fig.update_layout(
+                    scene=dict(aspectmode='cube'),
+                    margin=dict(l=0, r=0, b=0, t=0),
+                    height=350
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+        except Exception as e:
+            st.error(f"❌ Error en el código: {e}")
