@@ -8,11 +8,25 @@ from modules.command_parser import parse_commands
 from modules.image_processing import (
     convertir_a_escala_grises,
     aplicar_desenfoque_gaussiano,
-    detectar_bordes_canny
+    detectar_bordes_canny,
+    aplicar_clahe,
+    aplicar_filtro_bilateral,
+    aplicar_desenfoque_mediana,
+    aplicar_nlmeans,
+    detectar_umbrales_automaticos,
+    mejorar_bordes_morfologicos
 )
-from modules.contours import get_contours
+from modules.contours import get_contours, remuestrear_contorno, suavizar_contorno_media_movil
 from modules.extrusion import normalize_points, extrude_polygon, create_plotly_mesh, sort_contour_points
 from modules.primitives import get_cube, get_pyramid, get_sphere, get_cylinder, get_cone, get_prisma
+
+from modules.parametric import (
+    generar_paraboloide, generar_silla_montar, generar_onda_seno,
+    generar_helice, generar_espiral_conica, generar_mobius,
+    generar_klein_bottle, generar_toro_anudado, generar_funcion_z,
+    generar_superficie_custom, crear_mesh_plotly as crear_mesh_parametrico,
+    SUPERFICIES, EJEMPLOS_FORMULAS
+)
 
 # Configuración de página
 st.set_page_config(page_title="Vektra", layout="wide")
@@ -30,25 +44,83 @@ def reducir_resolucion(image_array, max_dim=800):
     return image_array
 
 
-def procesar_imagen(image_array, kernel_size, threshold1, threshold2):
-    """Pipeline completo de procesamiento"""
-    # Reducir resolucion para velocidad
+def procesar_imagen_avanzado(image_array, config):
+    """
+    Pipeline avanzado de procesamiento con opciones configurables.
+    
+    Args:
+        image_array: Imagen RGB
+        config: Dict con configuración de procesamiento
+        
+    Returns:
+        Dict con resultados de cada etapa
+    """
+    results = {}
+    
+    # Reducir resolución para velocidad
     image_resized = reducir_resolucion(image_array)
+    results['original'] = image_resized
     
-    # Conversion a escala de grises (función importada del módulo)
+    # 1. Conversión a escala de grises
     gray = convertir_a_escala_grises(image_resized)
+    results['gray'] = gray
     
-    # Desenfoque gaussiano (función importada del módulo)
+    # 2. Mejora de contraste (CLAHE)
+    if config.get('enhance_contrast', True):
+        enhanced = aplicar_clahe(gray, clip_limit=config.get('clahe_clip', 2.0))
+        results['enhanced'] = enhanced
+    else:
+        enhanced = gray
+    
+    # 3. Reducción de ruido según método seleccionado
+    denoise_method = config.get('denoise_method', 'bilateral')
+    kernel_size = config.get('kernel_size', 5)
+    
+    if denoise_method == 'gaussian':
+        denoised = aplicar_desenfoque_gaussiano(enhanced, kernel_size)
+    elif denoise_method == 'bilateral':
+        denoised = aplicar_filtro_bilateral(enhanced)
+    elif denoise_method == 'median':
+        denoised = aplicar_desenfoque_mediana(enhanced, kernel_size)
+    elif denoise_method == 'nlmeans':
+        denoised = aplicar_nlmeans(enhanced)
+    else:
+        denoised = enhanced
+    
+    results['denoised'] = denoised
+    
+    # 4. Calcular umbrales
+    if config.get('auto_threshold', True):
+        t1, t2 = detectar_umbrales_automaticos(denoised)
+    else:
+        t1 = config.get('threshold1', 50)
+        t2 = config.get('threshold2', 150)
+    
+    results['thresholds'] = (t1, t2)
+    
+    # 5. Detección de bordes
+    edges = detectar_bordes_canny(denoised, t1, t2)
+    
+    # 6. Mejora morfológica de bordes
+    kernel = np.ones((3, 3), np.uint8)
+    edges_improved = mejorar_bordes_morfologicos(edges, kernel_size=3)
+    results['edges'] = edges_improved
+    
+    return results
+
+
+# Mantener función legacy para compatibilidad
+def procesar_imagen(image_array, kernel_size, threshold1, threshold2):
+    """Pipeline básico de procesamiento (legacy)"""
+    image_resized = reducir_resolucion(image_array)
+    gray = convertir_a_escala_grises(image_resized)
     blurred = aplicar_desenfoque_gaussiano(gray, kernel_size)
-    
-    # Deteccion de bordes Canny (función importada del módulo)
     edges = detectar_bordes_canny(blurred, threshold1, threshold2)
-    
     return image_resized, gray, blurred, edges
 
 # ============ INTERFAZ PRINCIPAL ============
 st.title("Motor de Vectorización de Imágenes y Renderizado Procedural")
-tab_vector, tab_primitives, tab_code = st.tabs(["🖼️ Vectorizador de Imagen", "📐 Generador de Figuras Primitivas", "⌨️ Editor por Código"])
+tab_vector, tab_primitives, tab_code, tab_parametric = st.tabs(["🖼️ Vectorizador de Imagen", "📐 Generador de Figuras Primitivas", "⌨️ Editor por Código","📐 Superficies Matemáticas"])
 
 with tab_vector:
     st.markdown("Carga una imagen JPG/PNG")
@@ -252,3 +324,254 @@ with tab_code:
 
         except Exception as e:
             st.error(f"❌ Error en el código: {e}")
+
+    else:
+        st.info("👆 Carga una imagen para comenzar el procesamiento")
+    
+with tab_parametric:
+    st.subheader("📐 Superficies Paramétricas")
+    st.markdown("Genera superficies 3D usando **fórmulas matemáticas de vectores**")
+    
+    col_formula, col_vista = st.columns([1, 2])
+    
+    with col_formula:
+        st.markdown("**🔢 Configuración**")
+        
+        # Modo de entrada
+        modo_superficie = st.radio(
+            "Modo de generación",
+            options=["Superficies predefinidas", "Fórmula z = f(x,y)", "Superficie paramétrica"],
+            horizontal=True
+        )
+        
+        if modo_superficie == "Superficies predefinidas":
+            # Selector de superficie predefinida
+            superficie_sel = st.selectbox(
+                "Selecciona una superficie",
+                options=[
+                    "paraboloide", "silla_montar", "onda_seno", 
+                    "helice", "espiral_conica", "mobius", 
+                    "klein", "toro_anudado"
+                ],
+                format_func=lambda x: {
+                    "paraboloide": "🔵 Paraboloide (z = x² + y²)",
+                    "silla_montar": "🐴 Silla de Montar (z = x² - y²)",
+                    "onda_seno": "🌊 Onda Seno (z = sin(x)cos(y))",
+                    "helice": "🧬 Hélice (espiral 3D)",
+                    "espiral_conica": "🌀 Espiral Cónica",
+                    "mobius": "♾️ Banda de Möbius",
+                    "klein": "🍶 Botella de Klein",
+                    "toro_anudado": "🔗 Nudo Toroidal"
+                }.get(x, x)
+            )
+            
+            # Parámetros según la superficie
+            param_resolution = st.slider("Resolución", 20, 100, 50, key="param_res")
+            param_color = st.color_picker("Color", value="#9b59b6", key="param_color")
+            param_opacity = st.slider("Opacidad", 0.1, 1.0, 0.85, key="param_opacity")
+            
+            # Generar superficie
+            try:
+                if superficie_sel == "paraboloide":
+                    param_a = st.slider("Escala A", 0.5, 2.0, 1.0)
+                    param_h = st.slider("Altura máx", 1.0, 4.0, 2.0)
+                    vertices_param, faces_param = generar_paraboloide(a=param_a, height=param_h, resolution=param_resolution)
+                
+                elif superficie_sel == "silla_montar":
+                    param_size = st.slider("Tamaño", 1.0, 4.0, 2.0)
+                    vertices_param, faces_param = generar_silla_montar(size=param_size, resolution=param_resolution)
+                
+                elif superficie_sel == "onda_seno":
+                    param_amp = st.slider("Amplitud", 0.5, 2.0, 1.0)
+                    param_freq = st.slider("Frecuencia", 0.5, 3.0, 1.0)
+                    vertices_param, faces_param = generar_onda_seno(amplitud=param_amp, frecuencia=param_freq, resolution=param_resolution)
+                
+                elif superficie_sel == "helice":
+                    param_vueltas = st.slider("Vueltas", 1, 6, 3)
+                    param_paso = st.slider("Paso", 0.2, 1.0, 0.5)
+                    vertices_param, faces_param = generar_helice(vueltas=param_vueltas, paso=param_paso, resolution=param_resolution)
+                
+                elif superficie_sel == "espiral_conica":
+                    param_vueltas = st.slider("Vueltas", 2, 8, 4)
+                    vertices_param, faces_param = generar_espiral_conica(vueltas=param_vueltas, resolution=param_resolution)
+                
+                elif superficie_sel == "mobius":
+                    param_ancho = st.slider("Ancho banda", 0.2, 0.8, 0.4)
+                    vertices_param, faces_param = generar_mobius(ancho=param_ancho, resolution=param_resolution)
+                
+                elif superficie_sel == "klein":
+                    vertices_param, faces_param = generar_klein_bottle(resolution=param_resolution)
+                
+                elif superficie_sel == "toro_anudado":
+                    param_p = st.slider("Parámetro p", 2, 5, 2)
+                    param_q = st.slider("Parámetro q", 2, 7, 3)
+                    vertices_param, faces_param = generar_toro_anudado(p=param_p, q=param_q, resolution=param_resolution)
+                else:
+                    vertices_param, faces_param = generar_paraboloide()
+                    
+            except Exception as e:
+                st.error(f"Error generando superficie: {e}")
+                vertices_param, faces_param = np.array([]), []
+        
+        elif modo_superficie == "Fórmula z = f(x,y)":
+            st.markdown("**Ingresa tu fórmula:**")
+            
+            # Ejemplos
+            with st.expander("📚 Ver ejemplos de fórmulas"):
+                st.code("""
+# Paraboloide
+x**2 + y**2
+
+# Silla de montar
+x**2 - y**2
+
+# Ondas
+sin(x) * cos(y)
+
+# Gaussiana
+exp(-(x**2 + y**2))
+
+# Ondas radiales
+sin(sqrt(x**2 + y**2))
+
+# Crestas
+sin(x) + sin(y)
+""", language="python")
+            
+            formula_z = st.text_input(
+                "z = f(x, y)",
+                value="sin(sqrt(x**2 + y**2))",
+                help="Usa: sin, cos, tan, exp, log, sqrt, abs, pi, e"
+            )
+            
+            col_range1, col_range2 = st.columns(2)
+            with col_range1:
+                x_min = st.number_input("X mín", value=-3.0)
+                y_min = st.number_input("Y mín", value=-3.0)
+            with col_range2:
+                x_max = st.number_input("X máx", value=3.0)
+                y_max = st.number_input("Y máx", value=3.0)
+            
+            param_resolution = st.slider("Resolución", 20, 80, 50, key="formula_res")
+            param_color = st.color_picker("Color", value="#3498db", key="formula_color")
+            param_opacity = st.slider("Opacidad", 0.1, 1.0, 0.85, key="formula_opacity")
+            
+            try:
+                vertices_param, faces_param = generar_funcion_z(
+                    formula_z,
+                    x_min=x_min, x_max=x_max,
+                    y_min=y_min, y_max=y_max,
+                    resolution=param_resolution
+                )
+            except Exception as e:
+                st.error(f"Error en fórmula: {e}")
+                vertices_param, faces_param = np.array([]), []
+        
+        else:  # Superficie paramétrica completa
+            st.markdown("**Vector r(u,v) = (x, y, z):**")
+            
+            with st.expander("📚 Ver ejemplos paramétricos"):
+                st.code("""
+# Esfera (radio 1)
+x: cos(u) * sin(v)
+y: sin(u) * sin(v)
+z: cos(v)
+u: [0, 2π], v: [0, π]
+
+# Toro
+x: (2 + cos(v)) * cos(u)
+y: (2 + cos(v)) * sin(u)
+z: sin(v)
+u: [0, 2π], v: [0, 2π]
+
+# Cono
+x: u * cos(v)
+y: u * sin(v)
+z: u
+u: [0, 2], v: [0, 2π]
+""", language="python")
+            
+            eq_x = st.text_input("x(u,v) =", value="(2 + cos(v)) * cos(u)")
+            eq_y = st.text_input("y(u,v) =", value="(2 + cos(v)) * sin(u)")
+            eq_z = st.text_input("z(u,v) =", value="sin(v)")
+            
+            st.markdown("**Rangos de parámetros:**")
+            col_u, col_v = st.columns(2)
+            with col_u:
+                u_min = st.number_input("u mín", value=0.0)
+                u_max = st.number_input("u máx", value=6.28)  # 2π
+            with col_v:
+                v_min = st.number_input("v mín", value=0.0)
+                v_max = st.number_input("v máx", value=6.28)  # 2π
+            
+            param_resolution = st.slider("Resolución", 20, 80, 40, key="custom_res")
+            param_color = st.color_picker("Color", value="#e74c3c", key="custom_color")
+            param_opacity = st.slider("Opacidad", 0.1, 1.0, 0.85, key="custom_opacity")
+            
+            try:
+                vertices_param, faces_param = generar_superficie_custom(
+                    eq_x, eq_y, eq_z,
+                    u_min=u_min, u_max=u_max,
+                    v_min=v_min, v_max=v_max,
+                    resolution=param_resolution
+                )
+            except Exception as e:
+                st.error(f"Error en ecuaciones: {e}")
+                vertices_param, faces_param = np.array([]), []
+    
+    with col_vista:
+        st.markdown("**🔷 Visualización 3D**")
+        
+        if len(vertices_param) > 0 and len(faces_param) > 0:
+            mesh_param = crear_mesh_parametrico(
+                vertices_param, faces_param,
+                color=param_color, opacity=param_opacity,
+                name="Superficie"
+            )
+            
+            fig_param = go.Figure(data=[go.Mesh3d(**mesh_param)])
+            
+            # Agregar colorscale basado en Z
+            fig_param.data[0].update(
+                intensity=vertices_param[:, 2],
+                colorscale='Viridis',
+                showscale=True,
+                colorbar=dict(title="Z")
+            )
+            
+            fig_param.update_layout(
+                scene=dict(
+                    xaxis_title='X',
+                    yaxis_title='Y',
+                    zaxis_title='Z',
+                    aspectmode='data',
+                    camera=dict(eye=dict(x=1.5, y=1.5, z=1.0))
+                ),
+                margin=dict(l=0, r=0, b=0, t=30),
+                height=500,
+                title=f"Superficie Matemática"
+            )
+            
+            st.plotly_chart(fig_param, use_container_width=True)
+            
+            # Estadísticas
+            stats1, stats2, stats3 = st.columns(3)
+            with stats1:
+                st.metric("Vértices", len(vertices_param))
+            with stats2:
+                st.metric("Caras", len(faces_param))
+            with stats3:
+                z_range = vertices_param[:, 2].max() - vertices_param[:, 2].min()
+                st.metric("Rango Z", f"{z_range:.2f}")
+            
+            # Información adicional
+            with st.expander("📊 Información de la superficie"):
+                st.markdown(f"""
+                **Estadísticas:**
+                - X: [{vertices_param[:, 0].min():.2f}, {vertices_param[:, 0].max():.2f}]
+                - Y: [{vertices_param[:, 1].min():.2f}, {vertices_param[:, 1].max():.2f}]
+                - Z: [{vertices_param[:, 2].min():.2f}, {vertices_param[:, 2].max():.2f}]
+                - Resolución: {param_resolution}×{param_resolution}
+                """)
+        else:
+            st.warning("No se pudo generar la superficie. Verifica los parámetros.")
