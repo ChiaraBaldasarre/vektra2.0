@@ -308,32 +308,48 @@ with tab_code:
         height=300
     )
 
+    # Color picker para las figuras
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        figura_color = st.color_picker(
+            "Color de las figuras",
+            value="#00CED1",
+            key="code_editor_color"
+        )
+    
+    with col2:
+        st.write("")  # Para alinear verticalmente
+
     if st.button("▶ Ejecutar código"):
         try:
             figures = parse_commands(code)
-
-            for v, i, j, k in figures:
-                fig = go.Figure(data=[
-                    go.Mesh3d(
-                        x=v[:,0], y=v[:,1], z=v[:,2],
-                        i=i, j=j, k=k,
-                        opacity=0.9,
-                        color="lightblue",
-                        flatshading=False
-                    )
-                ])
-                fig.update_layout(
-                    scene=dict(aspectmode='cube'),
-                    margin=dict(l=0, r=0, b=0, t=0),
-                    height=350
-                )
-                st.plotly_chart(fig, use_container_width=True)
-
+            # Guardar figuras en session_state
+            st.session_state.code_figures = figures
+            st.session_state.code_executed = True
         except Exception as e:
             st.error(f"❌ Error en el código: {e}")
-
+            st.session_state.code_executed = False
+    
+    # Mostrar figuras guardadas con color dinámico
+    if hasattr(st.session_state, 'code_executed') and st.session_state.code_executed:
+        for v, i, j, k in st.session_state.code_figures:
+            fig = go.Figure(data=[
+                go.Mesh3d(
+                    x=v[:,0], y=v[:,1], z=v[:,2],
+                    i=i, j=j, k=k,
+                    opacity=0.9,
+                    color=figura_color,
+                    flatshading=False
+                )
+            ])
+            fig.update_layout(
+                scene=dict(aspectmode='cube'),
+                margin=dict(l=0, r=0, b=0, t=0),
+                height=350
+            )
+            st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("👆 Carga una imagen para comenzar el procesamiento")
+        st.info("👆 Haz clic en 'Ejecutar código' para generar las figuras")
     
 with tab_parametric:
     st.subheader("📐 Superficies Paramétricas")
