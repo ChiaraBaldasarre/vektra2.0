@@ -212,6 +212,282 @@ def generar_toro_anudado(p=2, q=3, radio_mayor=1.0, radio_menor=0.3, resolution=
     return _crear_tubo_desde_curva(x, y, z, radio_tubo=radio_menor, resolution_tubo=16)
 
 
+def generar_cilindro(radio=1.0, altura=2.0, resolution=40):
+    """
+    Genera un cilindro: x = R*cos(u), y = R*sin(u), z = v
+    """
+    def fx(u, v): return radio * np.cos(u)
+    def fy(u, v): return radio * np.sin(u)
+    def fz(u, v): return v
+    
+    return evaluar_superficie_parametrica(
+        fx, fy, fz,
+        (0, 2 * np.pi), (-altura/2, altura/2),
+        resolution
+    )
+
+
+def generar_cono_parametrico(radio_base=1.0, altura=2.0, resolution=40):
+    """
+    Genera un cono paramétrico: x = v*cos(u), y = v*sin(u), z = v
+    """
+    def fx(u, v): return v * np.cos(u)
+    def fy(u, v): return v * np.sin(u)
+    def fz(u, v): return v
+    
+    return evaluar_superficie_parametrica(
+        fx, fy, fz,
+        (0, 2 * np.pi), (0, altura),
+        resolution
+    )
+
+
+def generar_toro(radio_mayor=1.0, radio_menor=0.4, resolution=40):
+    """
+    Genera un toro (dónut).
+    r(u,v) = ((R + r*cos(v))*cos(u), (R + r*cos(v))*sin(u), r*sin(v))
+    """
+    def fx(u, v): return (radio_mayor + radio_menor * np.cos(v)) * np.cos(u)
+    def fy(u, v): return (radio_mayor + radio_menor * np.cos(v)) * np.sin(u)
+    def fz(u, v): return radio_menor * np.sin(v)
+    
+    return evaluar_superficie_parametrica(
+        fx, fy, fz,
+        (0, 2 * np.pi), (0, 2 * np.pi),
+        resolution
+    )
+
+
+def generar_pseudoesfera(altura=2.0, resolution=40):
+    """
+    Genera una pseudoesfera (superficie de revolución hiperbólica).
+    x = cos(u)*sinh(v), y = sin(u)*sinh(v), z = v - cosh(v)
+    """
+    def fx(u, v): return np.cos(u) * np.sinh(v)
+    def fy(u, v): return np.sin(u) * np.sinh(v)
+    def fz(u, v): return v - np.cosh(v)
+    
+    return evaluar_superficie_parametrica(
+        fx, fy, fz,
+        (0, 2 * np.pi), (0, altura),
+        resolution
+    )
+
+
+def generar_enneper(size=1.5, resolution=50):
+    """
+    Genera la superficie de Enneper (minimal surface).
+    x = u - u³/3 + u*v²
+    y = v - v³/3 + v*u²
+    z = u² - v²
+    """
+    def fx(u, v): return u - (u**3)/3 + u*(v**2)
+    def fy(u, v): return v - (v**3)/3 + v*(u**2)
+    def fz(u, v): return u**2 - v**2
+    
+    return evaluar_superficie_parametrica(
+        fx, fy, fz,
+        (-size, size), (-size, size),
+        resolution
+    )
+
+
+def generar_catalan(resolution=50):
+    """
+    Genera la superficie de Catalan (minimal surface).
+    x = u - sin(u)*cosh(v)
+    y = 1 - cos(u)*cosh(v)
+    z = 4*sin(u/2)*sinh(v/2)
+    """
+    def fx(u, v): return u - np.sin(u)*np.cosh(v)
+    def fy(u, v): return 1 - np.cos(u)*np.cosh(v)
+    def fz(u, v): return 4*np.sin(u/2)*np.sinh(v/2)
+    
+    return evaluar_superficie_parametrica(
+        fx, fy, fz,
+        (0, 2*np.pi), (-1, 1),
+        resolution
+    )
+
+
+def generar_hiperboloide(a=1.0, b=1.0, c=1.0, altura=2.0, resolution=40):
+    """
+    Genera un hiperboloide de una hoja.
+    x = a*cos(u)*cosh(v), y = b*sin(u)*cosh(v), z = c*sinh(v)
+    """
+    def fx(u, v): return a * np.cos(u) * np.cosh(v)
+    def fy(u, v): return b * np.sin(u) * np.cosh(v)
+    def fz(u, v): return c * np.sinh(v)
+    
+    return evaluar_superficie_parametrica(
+        fx, fy, fz,
+        (0, 2 * np.pi), (-altura/2, altura/2),
+        resolution
+    )
+
+
+def generar_helicoide(radio=1.0, paso=0.3, vueltas=3, resolution=50):
+    """
+    Genera una superficie helicoidal (tornillo 3D).
+    x = u*cos(v), y = u*sin(v), z = paso*v
+    """
+    def fx(u, v): return u * np.cos(v)
+    def fy(u, v): return u * np.sin(v)
+    def fz(u, v): return paso * v
+    
+    return evaluar_superficie_parametrica(
+        fx, fy, fz,
+        (0, radio), (0, 2*np.pi*vueltas),
+        resolution
+    )
+
+
+def generar_vela(resolution=50):
+    """
+    Genera la superficie Vela (Sail Surface).
+    x = u*cos(v), y = u*sin(v), z = ln(u)
+    """
+    def fx(u, v): return u * np.cos(v)
+    def fy(u, v): return u * np.sin(v)
+    def fz(u, v): return np.log(u + 0.1)  # +0.1 para evitar log(0)
+    
+    return evaluar_superficie_parametrica(
+        fx, fy, fz,
+        (0.1, 2.0), (0, 2*np.pi),
+        resolution
+    )
+
+
+def generar_romboidal(resolution=50):
+    """
+    Genera una superficie romboidal.
+    x = sin(u)*cos(v), y = cos(u)*cos(v), z = sin(v) + u/π
+    """
+    def fx(u, v): return np.sin(u) * np.cos(v)
+    def fy(u, v): return np.cos(u) * np.cos(v)
+    def fz(u, v): return np.sin(v) + u / np.pi
+    
+    return evaluar_superficie_parametrica(
+        fx, fy, fz,
+        (0, 2*np.pi), (0, 2*np.pi),
+        resolution
+    )
+
+
+def generar_catenoide(radio=1.0, altura=3.0, resolution=50):
+    """
+    Genera un catenoide (minimal surface of revolution).
+    x = a*cosh(v/a)*cos(u)
+    y = a*cosh(v/a)*sin(u)
+    z = v
+    """
+    def fx(u, v): return radio * np.cosh(v/radio) * np.cos(u)
+    def fy(u, v): return radio * np.cosh(v/radio) * np.sin(u)
+    def fz(u, v): return v
+    
+    return evaluar_superficie_parametrica(
+        fx, fy, fz,
+        (0, 2*np.pi), (-altura/2, altura/2),
+        resolution
+    )
+
+
+def generar_ondulatoria_parametrica(amplitud=1.0, freq_n=2, freq_m=3, resolution=50):
+    """
+    Genera una superficie ondulatoria paramétrica.
+    x = u*cos(v), y = u*sin(v), z = A*sin(n*v)*sin(m*u)
+    """
+    def fx(u, v): return u * np.cos(v)
+    def fy(u, v): return u * np.sin(v)
+    def fz(u, v): return amplitud * np.sin(freq_n * v) * np.sin(freq_m * u)
+    
+    return evaluar_superficie_parametrica(
+        fx, fy, fz,
+        (-2, 2), (0, 2*np.pi),
+        resolution
+    )
+
+
+def generar_nudo_trebol(resolution=200):
+    """
+    Genera un nudo de trebol (como tubo 3D).
+    x = sin(t) + 2*sin(2t)
+    y = cos(t) - 2*cos(2t)
+    z = -sin(3t)
+    """
+    t = np.linspace(0, 2*np.pi, resolution)
+    
+    x = np.sin(t) + 2*np.sin(2*t)
+    y = np.cos(t) - 2*np.cos(2*t)
+    z = -np.sin(3*t)
+    
+    return _crear_tubo_desde_curva(x, y, z, radio_tubo=0.15, resolution_tubo=12)
+
+
+def generar_nudo_figura_ocho(resolution=200):
+    """
+    Genera un nudo figura-ocho (como tubo 3D).
+    x = (2 + cos(2t))*cos(3t)
+    y = (2 + cos(2t))*sin(3t)
+    z = sin(4t)
+    """
+    t = np.linspace(0, 2*np.pi, resolution)
+    
+    x = (2 + np.cos(2*t)) * np.cos(3*t)
+    y = (2 + np.cos(2*t)) * np.sin(3*t)
+    z = np.sin(4*t)
+    
+    return _crear_tubo_desde_curva(x, y, z, radio_tubo=0.12, resolution_tubo=12)
+
+
+def generar_espiral_toroidal(resolution=200):
+    """
+    Genera una espiral toroidal (como tubo 3D).
+    x = (2 + cos(5t))*cos(t)
+    y = (2 + cos(5t))*sin(t)
+    z = sin(5t)
+    """
+    t = np.linspace(0, 2*np.pi, resolution)
+    
+    x = (2 + np.cos(5*t)) * np.cos(t)
+    y = (2 + np.cos(5*t)) * np.sin(t)
+    z = np.sin(5*t)
+    
+    return _crear_tubo_desde_curva(x, y, z, radio_tubo=0.1, resolution_tubo=10)
+
+
+def generar_hipocicloide(R=5.0, r=3.0, resolution=200):
+    """
+    Genera una hipocicloide 3D (como tubo 3D).
+    x = (R-r)*cos(t) + r*cos((R-r)*t/r)
+    y = (R-r)*sin(t) - r*sin((R-r)*t/r)
+    z = sin(5t)
+    """
+    t = np.linspace(0, 2*np.pi*max(R,r), int(resolution*max(R,r)//4))
+    
+    x = (R-r)*np.cos(t) + r*np.cos((R-r)*t/r)
+    y = (R-r)*np.sin(t) - r*np.sin((R-r)*t/r)
+    z = np.sin(5*t)
+    
+    return _crear_tubo_desde_curva(x, y, z, radio_tubo=0.1, resolution_tubo=10)
+
+
+def generar_epicicloide(R=5.0, r=2.0, k=3, resolution=200):
+    """
+    Genera una epicicloide 3D (como tubo 3D).
+    x = (R+r)*cos(t) - r*cos((R+r)*t/r)
+    y = (R+r)*sin(t) - r*sin((R+r)*t/r)
+    z = sin(k*t)
+    """
+    t = np.linspace(0, 2*np.pi*max(R,r), int(resolution*max(R,r)//4))
+    
+    x = (R+r)*np.cos(t) - r*np.cos((R+r)*t/r)
+    y = (R+r)*np.sin(t) - r*np.sin((R+r)*t/r)
+    z = np.sin(k*t)
+    
+    return _crear_tubo_desde_curva(x, y, z, radio_tubo=0.1, resolution_tubo=10)
+
+
 def generar_superficie_custom(ecuacion_x, ecuacion_y, ecuacion_z, 
                                u_min=-2, u_max=2, v_min=-2, v_max=2,
                                resolution=40):
@@ -414,11 +690,35 @@ def crear_mesh_plotly(vertices, faces, color='#9b59b6', opacity=0.85, name='Para
 
 # Catálogo de superficies disponibles
 SUPERFICIES = {
+    # Superficies clásicas z = f(x,y)
     'paraboloide': generar_paraboloide,
     'silla_montar': generar_silla_montar,
     'onda_seno': generar_onda_seno,
+    
+    # Superficies paramétricas básicas
+    'cilindro': generar_cilindro,
+    'cono': generar_cono_parametrico,
+    'toro': generar_toro,
+    'pseudoesfera': generar_pseudoesfera,
+    'enneper': generar_enneper,
+    'catalan': generar_catalan,
+    'hiperboloide': generar_hiperboloide,
+    'helicoide': generar_helicoide,
+    'vela': generar_vela,
+    'romboidal': generar_romboidal,
+    'catenoide': generar_catenoide,
+    'ondulatoria': generar_ondulatoria_parametrica,
+    
+    # Curvas 3D (como tubos)
     'helice': generar_helice,
     'espiral_conica': generar_espiral_conica,
+    'nudo_trebol': generar_nudo_trebol,
+    'nudo_figura_ocho': generar_nudo_figura_ocho,
+    'espiral_toroidal': generar_espiral_toroidal,
+    'hipocicloide': generar_hipocicloide,
+    'epicicloide': generar_epicicloide,
+    
+    # Superficies especiales
     'mobius': generar_mobius,
     'klein': generar_klein_bottle,
     'toro_anudado': generar_toro_anudado,
@@ -427,23 +727,300 @@ SUPERFICIES = {
 
 # Ejemplos de fórmulas para el usuario
 EJEMPLOS_FORMULAS = """
-# ═══════════════════════════════════════════════
-# 📐 SUPERFICIES PARAMÉTRICAS - Fórmulas
-# ═══════════════════════════════════════════════
+╔════════════════════════════════════════════════════════════════╗
+║          📐 SUPERFICIES MATEMÁTICAS - FÓRMULAS VECTORIALES     ║
+╚════════════════════════════════════════════════════════════════╝
 
-# Superficie simple z = f(x,y):
-# Paraboloide:     z = x² + y²
-# Silla montar:    z = x² - y²
-# Onda:            z = sin(x) * cos(y)
-# Gaussiana:       z = exp(-(x² + y²))
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. SUPERFICIES CLÁSICAS z = f(x,y)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-# Superficies paramétricas r(u,v) = (x, y, z):
-# Esfera:          x = cos(u)*sin(v), y = sin(u)*sin(v), z = cos(v)
-# Toro:            x = (R + r*cos(v))*cos(u), y = (R + r*cos(v))*sin(u), z = r*sin(v)
-# Möbius:          x = (1 + v*cos(u/2))*cos(u), y = (1 + v*cos(u/2))*sin(u), z = v*sin(u/2)
+• Paraboloide:          z = x² + y²
+• Silla de Montar:      z = x² - y²
+• Onda Bidimensional:   z = sin(x) * cos(y)
+• Ondas Amortiguadas:   z = exp(-√(x²+y²)) * sin(5*√(x²+y²))
+• Campana Gaussiana:    z = exp(-(x² + y²))
+• Cono:                 z = √(x² + y²)
+• Hiperbólica:          z = tanh(x) * tanh(y)
+• Ondulatoria Compleja: z = sin(x) * sin(y) + cos(2x) * cos(2y)
+• Roseta Polar:         z = sin(3*atan2(y,x)) * (x² + y²)
+• Senoidal 3D Radial:   z = sin(√(x²+y²)) * cos(√(x²+y²))
 
-# Curvas 3D r(t) = (x, y, z):
-# Hélice:          x = cos(t), y = sin(t), z = t
-# Espiral:         x = t*cos(t), y = t*sin(t), z = t
-# Nudo trebol:     x = sin(t) + 2*sin(2t), y = cos(t) - 2*cos(2t), z = -sin(3t)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. SUPERFICIES PARAMÉTRICAS r(u,v) = (x, y, z)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+• CILINDRO:
+  x = R*cos(u),  y = R*sin(u),  z = v
+  u ∈ [0, 2π],  v ∈ [-h, h]
+
+• CONO PARAMÉTRICO:
+  x = v*cos(u),  y = v*sin(u),  z = v
+  u ∈ [0, 2π],  v ∈ [0, H]
+
+• TORO (Toroide):
+  x = (R + r*cos(v))*cos(u)
+  y = (R + r*cos(v))*sin(u)
+  z = r*sin(v)
+  u,v ∈ [0, 2π]  (R=radio mayor, r=radio menor)
+
+• PSEUDOESFERA:
+  x = cos(u)*sinh(v)
+  y = sin(u)*sinh(v)
+  z = v - cosh(v)
+  u ∈ [0, 2π],  v ∈ [0, h]
+
+• SUPERFICIE DE ENNEPER:
+  x = u - u³/3 + u*v²
+  y = v - v³/3 + v*u²
+  z = u² - v²
+  u,v ∈ [-1.5, 1.5]
+
+• SUPERFICIE DE CATALAN:
+  x = u - sin(u)*cosh(v)
+  y = 1 - cos(u)*cosh(v)
+  z = 4*sin(u/2)*sinh(v/2)
+
+• HIPERBOLOIDE DE UNA HOJA:
+  x = a*cos(u)*cosh(v)
+  y = b*sin(u)*cosh(v)
+  z = c*sinh(v)
+  u ∈ [0, 2π],  v ∈ [-h, h]
+
+• HELICOIDE (Tornillo 3D):
+  x = u*cos(v),  y = u*sin(v),  z = a*v
+  u ∈ [0, 2π],  v ∈ [0, 2π]
+
+• VELA (Sail Surface):
+  x = u*cos(v),  y = u*sin(v),  z = ln(u)
+  u ∈ [0.1, 2π],  v ∈ [0, 2π]
+
+• SUPERFICIE ROMBOIDAL:
+  x = sin(u)*cos(v)
+  y = cos(u)*cos(v)
+  z = sin(v) + u/π
+
+• BANDA DE MÖBIUS:
+  x = (R + v*cos(u/2))*cos(u)
+  y = (R + v*cos(u/2))*sin(u)
+  z = v*sin(u/2)
+  (Superficie no orientable con un solo lado)
+
+• BOTELLA DE KLEIN:
+  x = (2 + cos(v/2)*sin(u) - sin(v/2)*sin(2u))*cos(v)
+  y = (2 + cos(v/2)*sin(u) - sin(v/2)*sin(2u))*sin(v)
+  z = sin(v/2)*sin(u) + cos(v/2)*sin(2u)
+  (Superficie no orientable sin borde)
+
+• CATENOIDE (Minimal):
+  x = a*cosh(v/a)*cos(u)
+  y = a*cosh(v/a)*sin(u)
+  z = v
+
+• SUPERFICIE ONDULATORIA PARAMÉTRICA:
+  x = u*cos(v),  y = u*sin(v),  z = A*sin(n*v)*sin(m*u)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. CURVAS 3D r(t) = (x, y, z) - Para Tubos y Filamentos
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+• HÉLICE CLÁSICA:
+  x = cos(t),  y = sin(t),  z = t
+
+• ESPIRAL LOGARÍTMICA:
+  x = t*cos(t),  y = t*sin(t),  z = t
+
+• NUDO DE TREBOL:
+  x = sin(t) + 2*sin(2t)
+  y = cos(t) - 2*cos(2t)
+  z = -sin(3t)
+
+• NUDO FIGURA-OCHO:
+  x = (2 + cos(2t))*cos(3t)
+  y = (2 + cos(2t))*sin(3t)
+  z = sin(4t)
+
+• ESPIRAL TOROIDAL:
+  x = (2 + cos(5t))*cos(t)
+  y = (2 + cos(5t))*sin(t)
+  z = sin(5t)
+
+• HIPOCICLOIDE 3D:
+  x = (R-r)*cos(t) + r*cos((R-r)*t/r)
+  y = (R-r)*sin(t) - r*sin((R-r)*t/r)
+  z = sin(5t)
+
+• EPICICLOIDE 3D:
+  x = (R+r)*cos(t) - r*cos((R+r)*t/r)
+  y = (R+r)*sin(t) - r*sin((R+r)*t/r)
+  z = sin(k*t)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. FÓRMULAS PERSONALIZADAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Puedes usar generar_funcion_z() o generar_superficie_custom() con:
+• Variables: x, y, u, v
+• Funciones: sin, cos, tan, exp, log, sqrt, abs
+• Constantes: pi, e
+• Operadores: +, -, *, /, **
+
+EJEMPLOS:
+  x**2 + y**2               (Paraboloide)
+  sin(x) * cos(y)           (Onda)
+  exp(-sqrt(x**2 + y**2))   (Gaussiana)
+  sqrt(x**2 + y**2)         (Cono)
 """
+
+# Diccionario de fórmulas concisas por superficie
+FORMULAS_SUPERFICIES = {
+    "paraboloide": "z = x² + y²",
+    "silla_montar": "z = x² - y²",
+    "onda_seno": "z = sin(x)cos(y)",
+    "cilindro": "x=R·cos(u), y=R·sin(u), z=v",
+    "cono": "x=v·cos(u), y=v·sin(u), z=v",
+    "toro": "x=(R+r·cos(v))·cos(u), y=(R+r·cos(v))·sin(u), z=r·sin(v)",
+    "pseudoesfera": "x=cos(u)·sech(v), y=sin(u)·sech(v), z=v-tanh(v)",
+    "enneper": "x=u(1-u²/3+v²)/2, y=v(1-v²/3+u²)/2, z=(u²-v²)/2",
+    "catalan": "x=u-sin(u)·cosh(v), y=1-cos(u)·cosh(v), z=4·sin(u/2)·sinh(v/2)",
+    "hiperboloide": "x²/a² + y²/b² - z²/c² = 1",
+    "helicoide": "x=v·cos(u), y=v·sin(u), z=a·u",
+    "vela": "x=u·cos(v), y=u·sin(v), z=ln(u)",
+    "romboidal": "x=sin(u)·cos(v), y=cos(u)·cos(v), z=sin(v)+u/π",
+    "catenoide": "z = a·ln(tan(θ/2)), catenaria rotativa",
+    "ondulatoria": "z = sin(nπx)·sin(mπy)",
+    "helice": "x=cos(t), y=sin(t), z=c·t",
+    "espiral_conica": "r=θ, z=θ en coord. cilíndricas",
+    "nudo_trebol": "x=sin(t)+2·sin(2t), y=cos(t)-2·cos(2t), z=sin(3t)",
+    "nudo_figura_ocho": "x=(2+cos(2t))·cos(3t), y=(2+cos(2t))·sin(3t), z=sin(4t)",
+    "espiral_toroidal": "x=(2+cos(5t))·cos(t), y=(2+cos(5t))·sin(t), z=sin(5t)",
+    "hipocicloide": "x=(R-r)·cos(t)+r·cos((R-r)t/r), y=(R-r)·sin(t)-r·sin((R-r)t/r), z=sin(5t)",
+    "epicicloide": "x=(R+r)·cos(t)-r·cos((R+r)t/r), y=(R+r)·sin(t)-r·sin((R+r)t/r), z=sin(kt)",
+    "mobius": "x=(R+v·cos(u/2))·cos(u), y=(R+v·cos(u/2))·sin(u), z=v·sin(u/2)",
+    "klein": "x=(2+cos(v/2)·sin(u)-sin(v/2)·sin(2u))·cos(v), y=(2+cos(v/2)·sin(u)-sin(v/2)·sin(2u))·sin(v), z=sin(v/2)·sin(u)+cos(v/2)·sin(2u)",
+    "toro_anudado": "r=cos(qt)+2, x=r·cos(pt), y=r·sin(pt), z=-sin(qt)"
+}
+
+# Ejemplos de fórmulas z = f(x,y)
+EJEMPLOS_Z_FXY = {
+    "Paraboloide": "x**2 + y**2",
+    "Silla de Montar": "x**2 - y**2",
+    "Onda 2D": "sin(x) * cos(y)",
+    "Gaussiana": "exp(-(x**2 + y**2))",
+    "Ondas Radiales": "sin(sqrt(x**2 + y**2))",
+    "Crestas": "sin(x) + sin(y)",
+    "Senoidal Amortiguada": "exp(-sqrt(x**2 + y**2)) * sin(5*sqrt(x**2 + y**2))",
+    "Hiperbólica": "tanh(x) * tanh(y)",
+    "Roseta Polar": "sin(3*atan2(y,x)) * (x**2 + y**2)",
+    "Montaña": "cos(x) * cos(y)",
+    "Campana": "exp(-(x**2 + y**2) / 0.5)",
+    "Ondas Cruzadas": "sin(x) + cos(y)",
+    "Logarítmica": "log(1 + x**2 + y**2)",
+    "Senoidal Compleja": "sin(x) * sin(y) + cos(2*x) * cos(2*y)",
+    "Cono Suave": "sqrt(abs(x**2 + y**2))",
+    "Seno 3D": "sin(x)*cos(y)*sin(sqrt(x**2+y**2))",
+    "Valles": "cos(x*y)",
+    "Ondas Amortiguadas": "cos(sqrt(x**2 + y**2)) * exp(-0.1*sqrt(x**2 + y**2))",
+    "Función Mezcla": "(x**2 - y**2) / (1 + x**2 + y**2)",
+    "Ripples": "sin(2*pi*sqrt(x**2 + y**2))"
+}
+
+# Ejemplos de superficies paramétricas r(u,v) = (x,y,z)
+EJEMPLOS_PARAMETRICAS = {
+    "Esfera": {
+        "descripcion": "Esfera de radio 1",
+        "x": "cos(u) * sin(v)",
+        "y": "sin(u) * sin(v)",
+        "z": "cos(v)",
+        "u_rango": (0, 2*np.pi),
+        "v_rango": (0, np.pi)
+    },
+    "Toro": {
+        "descripcion": "Toro (dónut) clásico",
+        "x": "(2 + cos(v)) * cos(u)",
+        "y": "(2 + cos(v)) * sin(u)",
+        "z": "sin(v)",
+        "u_rango": (0, 2*np.pi),
+        "v_rango": (0, 2*np.pi)
+    },
+    "Cono": {
+        "descripcion": "Cono paramétrico",
+        "x": "u * cos(v)",
+        "y": "u * sin(v)",
+        "z": "u",
+        "u_rango": (0, 2),
+        "v_rango": (0, 2*np.pi)
+    },
+    "Cilindro": {
+        "descripcion": "Cilindro de altura 4",
+        "x": "cos(u)",
+        "y": "sin(u)",
+        "z": "v",
+        "u_rango": (0, 2*np.pi),
+        "v_rango": (-2, 2)
+    },
+    "Paraboloide Paramétrico": {
+        "descripcion": "Paraboloide 3D",
+        "x": "u * cos(v)",
+        "y": "u * sin(v)",
+        "z": "u**2",
+        "u_rango": (0, 2),
+        "v_rango": (0, 2*np.pi)
+    },
+    "Hiperboloide": {
+        "descripcion": "Hiperboloide de 1 hoja",
+        "x": "cosh(v) * cos(u)",
+        "y": "cosh(v) * sin(u)",
+        "z": "sinh(v)",
+        "u_rango": (0, 2*np.pi),
+        "v_rango": (-1, 1)
+    },
+    "Silla de Montar": {
+        "descripcion": "Silla hiperbólica en 3D",
+        "x": "u",
+        "y": "v",
+        "z": "u**2 - v**2",
+        "u_rango": (-2, 2),
+        "v_rango": (-2, 2)
+    },
+    "Onda 3D": {
+        "descripcion": "Superficie ondulada",
+        "x": "u",
+        "y": "v",
+        "z": "sin(u) * cos(v)",
+        "u_rango": (-np.pi, np.pi),
+        "v_rango": (-np.pi, np.pi)
+    },
+    "Botella Klein": {
+        "descripcion": "Superficie no orientable",
+        "x": "(2 + cos(v/2)*sin(u) - sin(v/2)*sin(2*u)) * cos(v)",
+        "y": "(2 + cos(v/2)*sin(u) - sin(v/2)*sin(2*u)) * sin(v)",
+        "z": "sin(v/2)*sin(u) + cos(v/2)*sin(2*u)",
+        "u_rango": (0, 2*np.pi),
+        "v_rango": (0, 2*np.pi)
+    },
+    "Helicoide": {
+        "descripcion": "Superficie de tornillo",
+        "x": "u * cos(v)",
+        "y": "u * sin(v)",
+        "z": "0.3 * v",
+        "u_rango": (0, 2),
+        "v_rango": (0, 4*np.pi)
+    },
+    "Seno Toroidal": {
+        "descripcion": "Toro con ondulación",
+        "x": "(2 + 0.5*cos(2*v)) * cos(u)",
+        "y": "(2 + 0.5*cos(2*v)) * sin(u)",
+        "z": "sin(v) + 0.3*sin(3*u)",
+        "u_rango": (0, 2*np.pi),
+        "v_rango": (0, 2*np.pi)
+    },
+    "Onda Senoidal": {
+        "descripcion": "Superficie con patrón de onda",
+        "x": "u * cos(v)",
+        "y": "u * sin(v)",
+        "z": "sin(3*v) + 0.2*u",
+        "u_rango": (0, 3),
+        "v_rango": (0, 2*np.pi)
+    }
+}

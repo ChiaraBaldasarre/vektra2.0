@@ -25,7 +25,14 @@ from modules.parametric import (
     generar_helice, generar_espiral_conica, generar_mobius,
     generar_klein_bottle, generar_toro_anudado, generar_funcion_z,
     generar_superficie_custom, crear_mesh_plotly as crear_mesh_parametrico,
-    SUPERFICIES, EJEMPLOS_FORMULAS
+    generar_cilindro, generar_cono_parametrico, generar_toro,
+    generar_pseudoesfera, generar_enneper, generar_catalan,
+    generar_hiperboloide, generar_helicoide, generar_vela,
+    generar_romboidal, generar_catenoide, generar_ondulatoria_parametrica,
+    generar_nudo_trebol, generar_nudo_figura_ocho, generar_espiral_toroidal,
+    generar_hipocicloide, generar_epicicloide,
+    SUPERFICIES, EJEMPLOS_FORMULAS, FORMULAS_SUPERFICIES,
+    EJEMPLOS_Z_FXY, EJEMPLOS_PARAMETRICAS
 )
 
 # Configuración de página
@@ -345,24 +352,46 @@ with tab_parametric:
         )
         
         if modo_superficie == "Superficies predefinidas":
-            # Selector de superficie predefinida
+            # Selector de superficie predefinida con etiquetas descriptivas
+            # Diccionario de emojis para cada superficie
+            emojis_superficies = {
+                "paraboloide": "🔵",
+                "silla_montar": "🐴",
+                "onda_seno": "🌊",
+                "cilindro": "📦",
+                "cono": "🔺",
+                "toro": "🍩",
+                "pseudoesfera": "🌐",
+                "enneper": "🌈",
+                "catalan": "🎨",
+                "hiperboloide": "⚡",
+                "helicoide": "🌀",
+                "vela": "⛵",
+                "romboidal": "◇",
+                "catenoide": "⛓️",
+                "ondulatoria": "〰️",
+                "helice": "🧬",
+                "espiral_conica": "🌀",
+                "nudo_trebol": "🍀",
+                "nudo_figura_ocho": "8️⃣",
+                "espiral_toroidal": "🌪️",
+                "hipocicloide": "🔄",
+                "epicicloide": "⭕",
+                "mobius": "♾️",
+                "klein": "🍶",
+                "toro_anudado": "🔗"
+            }
+            
+            # Crear labels dinámicamente con emojis y fórmulas
+            labels_superficies = {
+                sup: f"{emojis_superficies.get(sup, '')} {sup.replace('_', ' ').title()} ({FORMULAS_SUPERFICIES.get(sup, 'N/A')})"
+                for sup in sorted(SUPERFICIES.keys())
+            }
+            
             superficie_sel = st.selectbox(
                 "Selecciona una superficie",
-                options=[
-                    "paraboloide", "silla_montar", "onda_seno", 
-                    "helice", "espiral_conica", "mobius", 
-                    "klein", "toro_anudado"
-                ],
-                format_func=lambda x: {
-                    "paraboloide": "🔵 Paraboloide (z = x² + y²)",
-                    "silla_montar": "🐴 Silla de Montar (z = x² - y²)",
-                    "onda_seno": "🌊 Onda Seno (z = sin(x)cos(y))",
-                    "helice": "🧬 Hélice (espiral 3D)",
-                    "espiral_conica": "🌀 Espiral Cónica",
-                    "mobius": "♾️ Banda de Möbius",
-                    "klein": "🍶 Botella de Klein",
-                    "toro_anudado": "🔗 Nudo Toroidal"
-                }.get(x, x)
+                options=sorted(SUPERFICIES.keys()),
+                format_func=lambda x: labels_superficies.get(x, x.replace("_", " ").title())
             )
             
             # Parámetros según la superficie
@@ -370,44 +399,100 @@ with tab_parametric:
             param_color = st.color_picker("Color", value="#9b59b6", key="param_color")
             param_opacity = st.slider("Opacidad", 0.1, 1.0, 0.85, key="param_opacity")
             
-            # Generar superficie
+            # Mostrar fórmula de la superficie seleccionada
+            with st.expander("📐 Ver fórmula"):
+                st.code(EJEMPLOS_FORMULAS, language="python")
+            
+            # Generar superficie de forma dinámica
             try:
+                # Parámetros específicos por tipo de superficie
                 if superficie_sel == "paraboloide":
                     param_a = st.slider("Escala A", 0.5, 2.0, 1.0)
                     param_h = st.slider("Altura máx", 1.0, 4.0, 2.0)
-                    vertices_param, faces_param = generar_paraboloide(a=param_a, height=param_h, resolution=param_resolution)
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](a=param_a, height=param_h, resolution=param_resolution)
                 
                 elif superficie_sel == "silla_montar":
                     param_size = st.slider("Tamaño", 1.0, 4.0, 2.0)
-                    vertices_param, faces_param = generar_silla_montar(size=param_size, resolution=param_resolution)
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](size=param_size, resolution=param_resolution)
                 
                 elif superficie_sel == "onda_seno":
                     param_amp = st.slider("Amplitud", 0.5, 2.0, 1.0)
                     param_freq = st.slider("Frecuencia", 0.5, 3.0, 1.0)
-                    vertices_param, faces_param = generar_onda_seno(amplitud=param_amp, frecuencia=param_freq, resolution=param_resolution)
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](amplitud=param_amp, frecuencia=param_freq, resolution=param_resolution)
                 
                 elif superficie_sel == "helice":
                     param_vueltas = st.slider("Vueltas", 1, 6, 3)
                     param_paso = st.slider("Paso", 0.2, 1.0, 0.5)
-                    vertices_param, faces_param = generar_helice(vueltas=param_vueltas, paso=param_paso, resolution=param_resolution)
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](vueltas=param_vueltas, paso=param_paso, resolution=param_resolution)
                 
                 elif superficie_sel == "espiral_conica":
                     param_vueltas = st.slider("Vueltas", 2, 8, 4)
-                    vertices_param, faces_param = generar_espiral_conica(vueltas=param_vueltas, resolution=param_resolution)
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](vueltas=param_vueltas, resolution=param_resolution)
                 
                 elif superficie_sel == "mobius":
                     param_ancho = st.slider("Ancho banda", 0.2, 0.8, 0.4)
-                    vertices_param, faces_param = generar_mobius(ancho=param_ancho, resolution=param_resolution)
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](ancho=param_ancho, resolution=param_resolution)
                 
-                elif superficie_sel == "klein":
-                    vertices_param, faces_param = generar_klein_bottle(resolution=param_resolution)
+                elif superficie_sel == "toro":
+                    param_r_mayor = st.slider("Radio mayor", 0.5, 2.0, 1.0)
+                    param_r_menor = st.slider("Radio menor", 0.2, 0.8, 0.4)
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](radio_mayor=param_r_mayor, radio_menor=param_r_menor, resolution=param_resolution)
                 
                 elif superficie_sel == "toro_anudado":
                     param_p = st.slider("Parámetro p", 2, 5, 2)
                     param_q = st.slider("Parámetro q", 2, 7, 3)
-                    vertices_param, faces_param = generar_toro_anudado(p=param_p, q=param_q, resolution=param_resolution)
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](p=param_p, q=param_q, resolution=param_resolution)
+                
+                elif superficie_sel == "cono":
+                    param_radio = st.slider("Radio base", 0.5, 2.0, 1.0)
+                    param_altura = st.slider("Altura", 1.0, 4.0, 2.0)
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](radio_base=param_radio, altura=param_altura, resolution=param_resolution)
+                
+                elif superficie_sel == "cilindro":
+                    param_radio = st.slider("Radio", 0.5, 2.0, 1.0)
+                    param_altura = st.slider("Altura", 1.0, 4.0, 2.0)
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](radio=param_radio, altura=param_altura, resolution=param_resolution)
+                
+                elif superficie_sel == "pseudoesfera":
+                    param_altura = st.slider("Altura", 0.5, 3.0, 2.0)
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](altura=param_altura, resolution=param_resolution)
+                
+                elif superficie_sel == "hiperboloide":
+                    param_a = st.slider("Escala a", 0.5, 2.0, 1.0)
+                    param_b = st.slider("Escala b", 0.5, 2.0, 1.0)
+                    param_c = st.slider("Escala c", 0.5, 2.0, 1.0)
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](a=param_a, b=param_b, c=param_c, resolution=param_resolution)
+                
+                elif superficie_sel == "helicoide":
+                    param_paso = st.slider("Paso", 0.2, 1.0, 0.3)
+                    param_vueltas = st.slider("Vueltas", 1, 5, 3)
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](paso=param_paso, vueltas=param_vueltas, resolution=param_resolution)
+                
+                elif superficie_sel == "catenoide":
+                    param_radio = st.slider("Radio", 0.5, 2.0, 1.0)
+                    param_altura = st.slider("Altura", 1.0, 4.0, 3.0)
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](radio=param_radio, altura=param_altura, resolution=param_resolution)
+                
+                elif superficie_sel == "ondulatoria":
+                    param_amp = st.slider("Amplitud", 0.5, 2.0, 1.0)
+                    param_n = st.slider("Frecuencia n", 1, 5, 2)
+                    param_m = st.slider("Frecuencia m", 1, 5, 3)
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](amplitud=param_amp, freq_n=param_n, freq_m=param_m, resolution=param_resolution)
+                
+                elif superficie_sel == "hipocicloide":
+                    param_R = st.slider("Radio mayor (R)", 3.0, 8.0, 5.0)
+                    param_r = st.slider("Radio menor (r)", 1.0, 4.0, 3.0)
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](R=param_R, r=param_r, resolution=param_resolution)
+                
+                elif superficie_sel == "epicicloide":
+                    param_R = st.slider("Radio mayor (R)", 3.0, 8.0, 5.0)
+                    param_r = st.slider("Radio menor (r)", 1.0, 4.0, 2.0)
+                    param_k = st.slider("Frecuencia (k)", 1, 5, 3)
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](R=param_R, r=param_r, k=param_k, resolution=param_resolution)
+                
                 else:
-                    vertices_param, faces_param = generar_paraboloide()
+                    # Para superficies sin parámetros especiales, llamar con solo resolution
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](resolution=param_resolution)
                     
             except Exception as e:
                 st.error(f"Error generando superficie: {e}")
@@ -418,29 +503,33 @@ with tab_parametric:
             
             # Ejemplos
             with st.expander("📚 Ver ejemplos de fórmulas"):
-                st.code("""
-# Paraboloide
-x**2 + y**2
-
-# Silla de montar
-x**2 - y**2
-
-# Ondas
-sin(x) * cos(y)
-
-# Gaussiana
-exp(-(x**2 + y**2))
-
-# Ondas radiales
-sin(sqrt(x**2 + y**2))
-
-# Crestas
-sin(x) + sin(y)
-""", language="python")
+                col_selec, col_code = st.columns([1, 2])
+                
+                with col_selec:
+                    st.markdown("**Ejemplos disponibles:**")
+                    ejemplo_seleccionado = st.selectbox(
+                        "Elige un ejemplo",
+                        options=list(EJEMPLOS_Z_FXY.keys()),
+                        key="ejemplo_z_select"
+                    )
+                
+                with col_code:
+                    st.markdown(f"**Fórmula:** {ejemplo_seleccionado}")
+                    st.code(EJEMPLOS_Z_FXY[ejemplo_seleccionado], language="python")
+                
+                # Botón para usar el ejemplo
+                if st.button("📌 Usar este ejemplo", key="usar_ejemplo_z"):
+                    st.session_state.usar_formula_ejemplo = ejemplo_seleccionado
+            
+            # Usar fórmula del ejemplo si se seleccionó
+            formula_default = EJEMPLOS_Z_FXY.get(
+                st.session_state.get("usar_formula_ejemplo", ""),
+                "sin(sqrt(x**2 + y**2))"
+            )
             
             formula_z = st.text_input(
                 "z = f(x, y)",
-                value="sin(sqrt(x**2 + y**2))",
+                value=formula_default,
                 help="Usa: sin, cos, tan, exp, log, sqrt, abs, pi, e"
             )
             
@@ -471,38 +560,47 @@ sin(x) + sin(y)
             st.markdown("**Vector r(u,v) = (x, y, z):**")
             
             with st.expander("📚 Ver ejemplos paramétricos"):
-                st.code("""
-# Esfera (radio 1)
-x: cos(u) * sin(v)
-y: sin(u) * sin(v)
-z: cos(v)
-u: [0, 2π], v: [0, π]
-
-# Toro
-x: (2 + cos(v)) * cos(u)
-y: (2 + cos(v)) * sin(u)
-z: sin(v)
-u: [0, 2π], v: [0, 2π]
-
-# Cono
-x: u * cos(v)
-y: u * sin(v)
-z: u
-u: [0, 2], v: [0, 2π]
-""", language="python")
+                col_selec, col_code = st.columns([1, 2])
+                
+                with col_selec:
+                    st.markdown("**Ejemplos disponibles:**")
+                    ejemplo_param = st.selectbox(
+                        "Elige un ejemplo",
+                        options=list(EJEMPLOS_PARAMETRICAS.keys()),
+                        key="ejemplo_param_select"
+                    )
+                    
+                    data = EJEMPLOS_PARAMETRICAS[ejemplo_param]
+                    st.markdown(f"**Descripción:** {data['descripcion']}")
+                
+                with col_code:
+                    st.markdown(f"**Fórmulas paramétricas:**")
+                    codigo_param = f"""# {ejemplo_param}
+x: {data['x']}
+y: {data['y']}
+z: {data['z']}"""
+                    st.code(codigo_param, language="python")
+                
+                # Botón para usar el ejemplo
+                if st.button("📌 Usar este ejemplo", key="usar_ejemplo_param"):
+                    st.session_state.usar_param_ejemplo = ejemplo_param
             
-            eq_x = st.text_input("x(u,v) =", value="(2 + cos(v)) * cos(u)")
-            eq_y = st.text_input("y(u,v) =", value="(2 + cos(v)) * sin(u)")
-            eq_z = st.text_input("z(u,v) =", value="sin(v)")
+            # Usar parámetros del ejemplo si se seleccionó
+            ejemplo_activo = st.session_state.get("usar_param_ejemplo", "Toro")
+            ejemplo_data = EJEMPLOS_PARAMETRICAS.get(ejemplo_activo, EJEMPLOS_PARAMETRICAS["Toro"])
+            
+            eq_x = st.text_input("x(u,v) =", value=ejemplo_data["x"])
+            eq_y = st.text_input("y(u,v) =", value=ejemplo_data["y"])
+            eq_z = st.text_input("z(u,v) =", value=ejemplo_data["z"])
             
             st.markdown("**Rangos de parámetros:**")
             col_u, col_v = st.columns(2)
             with col_u:
-                u_min = st.number_input("u mín", value=0.0)
-                u_max = st.number_input("u máx", value=6.28)  # 2π
+                u_min = st.number_input("u mín", value=float(ejemplo_data["u_rango"][0]))
+                u_max = st.number_input("u máx", value=float(ejemplo_data["u_rango"][1]))
             with col_v:
-                v_min = st.number_input("v mín", value=0.0)
-                v_max = st.number_input("v máx", value=6.28)  # 2π
+                v_min = st.number_input("v mín", value=float(ejemplo_data["v_rango"][0]))
+                v_max = st.number_input("v máx", value=float(ejemplo_data["v_rango"][1]))
             
             param_resolution = st.slider("Resolución", 20, 80, 40, key="custom_res")
             param_color = st.color_picker("Color", value="#e74c3c", key="custom_color")
