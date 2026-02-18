@@ -1,4 +1,4 @@
-# 📐 VEKTRA - Documentación de Álgebra Lineal
+# 📐 VEKTRA - Documentación sobre la aplicacion de algebra lineal
 
 > Motor de Vectorización de Imágenes y Renderizado Procedural 3D
 
@@ -661,5 +661,3 @@ El proyecto **Vektra** demuestra la aplicación práctica del álgebra lineal en
 El uso eficiente de **NumPy** permite realizar estas operaciones de manera **vectorizada**, optimizando el rendimiento.
 
 ---
-
-*Documentación generada para el proyecto Vektra - Febrero 2026*
