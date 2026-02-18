@@ -518,6 +518,23 @@ def generar_superficie_custom(ecuacion_x, ecuacion_y, ecuacion_z,
         'abs': np.abs,
         'pi': np.pi,
         'e': np.e,
+        # Funciones hiperbólicas
+        'sinh': np.sinh,
+        'cosh': np.cosh,
+        'tanh': np.tanh,
+        # Funciones trigonométricas inversas
+        'arcsin': np.arcsin,
+        'arccos': np.arccos,
+        'arctan': np.arctan,
+        'atan2': np.arctan2,
+        # Otras funciones útiles
+        'power': np.power,
+        'floor': np.floor,
+        'ceil': np.ceil,
+        'sign': np.sign,
+        'mod': np.mod,
+        'maximum': np.maximum,
+        'minimum': np.minimum,
     }
     
     try:
@@ -571,6 +588,23 @@ def generar_funcion_z(ecuacion_z, x_min=-2, x_max=2, y_min=-2, y_max=2, resoluti
         'abs': np.abs,
         'pi': np.pi,
         'e': np.e,
+        # Funciones hiperbólicas
+        'sinh': np.sinh,
+        'cosh': np.cosh,
+        'tanh': np.tanh,
+        # Funciones trigonométricas inversas
+        'arcsin': np.arcsin,
+        'arccos': np.arccos,
+        'arctan': np.arctan,
+        'atan2': np.arctan2,
+        # Otras funciones útiles
+        'power': np.power,
+        'floor': np.floor,
+        'ceil': np.ceil,
+        'sign': np.sign,
+        'mod': np.mod,
+        'maximum': np.maximum,
+        'minimum': np.minimum,
     }
     
     try:

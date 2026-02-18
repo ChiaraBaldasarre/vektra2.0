@@ -197,15 +197,61 @@ def create_plotly_mesh(vertices, faces, **kwargs):
     return plotly_data
 
 
-def sort_contour_points(points):
-    """Ordena puntos angularmente respecto al centroide."""
+def sort_contour_points(points, method='original'):
+    """
+    Ordena los puntos del contorno.
+    
+    Args:
+        points: Array de puntos 2D
+        method: 
+            - 'original': Mantiene el orden de OpenCV (recomendado para figuras complejas)
+            - 'angular': Ordena angularmente respecto al centroide (solo para convexos)
+            - 'optimized': Verifica y corrige la orientación sin reordenar
+    
+    Returns:
+        Array de puntos ordenados
+    """
     if len(points) < 3:
         return points
     
-    center = np.mean(points, axis=0)
-    angles = np.arctan2(points[:,1] - center[1],
-                        points[:,0] - center[0])
-    return points[np.argsort(angles)]
+    points = np.array(points, dtype=np.float64)
+    
+    if method == 'angular':
+        # Ordenamiento angular (solo para formas convexas simples)
+        center = np.mean(points, axis=0)
+        angles = np.arctan2(points[:,1] - center[1],
+                            points[:,0] - center[0])
+        return points[np.argsort(angles)]
+    
+    elif method == 'optimized':
+        # Verificar orientación (debe ser antihorario para Delaunay)
+        # Calcular el área con signo usando la fórmula del polígono
+        n = len(points)
+        signed_area = 0.0
+        for i in range(n):
+            j = (i + 1) % n
+            signed_area += points[i, 0] * points[j, 1]
+            signed_area -= points[j, 0] * points[i, 1]
+        signed_area /= 2.0
+        
+        # Si el área es negativa, invertir el orden (hacerlo antihorario)
+        if signed_area < 0:
+            return points[::-1]
+        return points
+    
+    else:  # 'original'
+        # Mantener el orden original de OpenCV
+        # Solo verificar orientación antihoraria
+        n = len(points)
+        signed_area = 0.0
+        for i in range(n):
+            j = (i + 1) % n
+            signed_area += points[i, 0] * points[j, 1]
+            signed_area -= points[j, 0] * points[i, 1]
+        
+        if signed_area < 0:
+            return points[::-1]
+        return points
 
 
 def ensure_closed_polygon(points, threshold=0.1):

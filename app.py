@@ -14,7 +14,10 @@ from modules.image_processing import (
     aplicar_desenfoque_mediana,
     aplicar_nlmeans,
     detectar_umbrales_automaticos,
-    mejorar_bordes_morfologicos
+    mejorar_bordes_morfologicos,
+    binarizar_adaptativo,
+    segmentar_grabcut,
+    detectar_bordes_multi_escala
 )
 from modules.contours import (
     get_contours, remuestrear_contorno, suavizar_contorno_media_movil,
@@ -201,6 +204,48 @@ with tab_vector:
         )
 
         st.sidebar.markdown("---")
+        st.sidebar.subheader("💡 Mejora de Detección")
+        
+        modo_deteccion = st.sidebar.selectbox(
+            "Modo de detección",
+            ["Canny Estándar", "Umbral Adaptativo", "Multi-Escala", "Segmentación Automática"],
+            index=0,
+            help="Prueba diferentes modos si la imagen no tiene bordes claros"
+        )
+        
+        # Valores por defecto para variables condicionales
+        block_size_adaptive = 11
+        c_adaptive = 2
+        grabcut_iterations = 5
+        
+        if modo_deteccion == "Umbral Adaptativo":
+            block_size_adaptive = st.sidebar.slider(
+                "Tamaño de bloque adaptativo",
+                min_value=3,
+                max_value=51,
+                value=11,
+                step=2,
+                help="Tamaño del vecindario para umbral local"
+            )
+            c_adaptive = st.sidebar.slider(
+                "Constante C",
+                min_value=-10,
+                max_value=20,
+                value=2,
+                help="Valor a restar del umbral calculado"
+            )
+        
+        if modo_deteccion == "Segmentación Automática":
+            st.sidebar.info("💡 GrabCut separa automáticamente el objeto del fondo")
+            grabcut_iterations = st.sidebar.slider(
+                "Iteraciones GrabCut",
+                min_value=1,
+                max_value=10,
+                value=5,
+                help="Más iteraciones = mejor segmentación pero más lento"
+            )
+
+        st.sidebar.markdown("---")
         st.sidebar.subheader("🔧 Calidad de Malla")
 
         mejora_preprocesado = st.sidebar.checkbox(
@@ -246,13 +291,83 @@ with tab_vector:
             help="Más puntos = mayor detalle pero más procesamiento"
         ) if remuestrear else 0
 
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🎯 Ajuste de Contorno")
+        
+        modo_contorno = st.sidebar.selectbox(
+            "Modo de contorno",
+            ["Solo el más grande", "Todos los contornos (unidos)", "Todos los contornos (hull)"],
+            index=0,
+            help="Elige cómo manejar múltiples objetos en la imagen"
+        )
+        
         morph_kernel_size = st.sidebar.slider(
             "Tamaño kernel morfológico",
             min_value=3,
-            max_value=15,
+            max_value=21,
             value=5,
             step=2,
-            help="Afecta cómo se cierran los contornos"
+            help="Mayor = cierra más huecos en el contorno"
+        )
+        
+        min_area_contorno = st.sidebar.slider(
+            "Área mínima del contorno",
+            min_value=10,
+            max_value=5000,
+            value=100,
+            step=50,
+            help="Ignora contornos más pequeños que este valor"
+        )
+        
+        simplificacion_contorno = st.sidebar.select_slider(
+            "Simplificación del contorno",
+            options=["Ninguna", "Baja", "Media", "Alta"],
+            value="Baja",
+            help="Reduce la cantidad de puntos del contorno"
+        )
+        
+        invertir_bordes = st.sidebar.checkbox(
+            "Invertir bordes",
+            value=False,
+            help="Útil si el objeto es más oscuro que el fondo"
+        )
+        
+        trazar_bordes = st.sidebar.checkbox(
+            "Trazar bordes (mejor para dibujos)",
+            value=True,
+            help="Usa cierre adaptativo para seguir mejor los bordes detectados"
+        )
+        
+        if trazar_bordes:
+            cierre_iteraciones = st.sidebar.slider(
+                "Iteraciones de cierre",
+                min_value=1,
+                max_value=20,
+                value=8,
+                help="Más iteraciones = conecta bordes más separados"
+            )
+            radio_ajuste = st.sidebar.slider(
+                "Radio de ajuste a bordes",
+                min_value=1,
+                max_value=30,
+                value=15,
+                help="Radio de búsqueda para ajustar el contorno a los bordes originales"
+            )
+        else:
+            cierre_iteraciones = 5
+            radio_ajuste = 10
+        
+        usar_hull = st.sidebar.checkbox(
+            "Usar Convex Hull",
+            value=False,
+            help="Envuelve el contorno en su casco convexo (ignora concavidades)"
+        )
+        
+        metodo_ordenamiento = st.sidebar.selectbox(
+            "Orden de puntos",
+            ["Original (recomendado)", "Angular (solo convexos)", "Optimizado"],
+            index=0,
+            help="Cómo ordenar los puntos del contorno para la malla 3D"
         )
 
         # Mapear método de denoise
@@ -266,26 +381,60 @@ with tab_vector:
 
         # Procesar imagen con pipeline avanzado
         try:
-            # Usar el procesamiento avanzado si está habilitado
+            # Reducir resolución primero
+            original = reducir_resolucion(image_array)
+            gray = convertir_a_escala_grises(original)
+            
+            # Preprocesamiento
             if mejora_preprocesado:
-                config = {
-                    'enhance_contrast': True,
-                    'clahe_clip': 2.5,
-                    'denoise_method': denoise_method,
-                    'kernel_size': kernel_size,
-                    'auto_threshold': False,
-                    'threshold1': threshold1,
-                    'threshold2': threshold2
-                }
-                results = procesar_imagen_avanzado(image_array, config)
-                original = results['original']
-                gray = results['gray']
-                blurred = results.get('enhanced', results.get('denoised', gray))
-                edges = results['edges']
+                enhanced = aplicar_clahe(gray, clip_limit=2.5)
             else:
-                original, gray, blurred, edges = procesar_imagen(
-                    image_array, kernel_size, threshold1, threshold2
-                )
+                enhanced = gray
+            
+            # Reducción de ruido
+            if denoise_method == 'gaussian':
+                denoised = aplicar_desenfoque_gaussiano(enhanced, kernel_size)
+            elif denoise_method == 'bilateral':
+                denoised = aplicar_filtro_bilateral(enhanced)
+            elif denoise_method == 'median':
+                denoised = aplicar_desenfoque_mediana(enhanced, kernel_size)
+            elif denoise_method == 'nlmeans':
+                denoised = aplicar_nlmeans(enhanced)
+            else:
+                denoised = enhanced
+            
+            blurred = denoised
+            
+            # Detección de bordes según el modo seleccionado
+            if modo_deteccion == "Canny Estándar":
+                edges = detectar_bordes_canny(denoised, threshold1, threshold2)
+                edges = mejorar_bordes_morfologicos(edges, kernel_size=3)
+                
+            elif modo_deteccion == "Umbral Adaptativo":
+                # Umbralización adaptativa - mejor para imágenes con iluminación desigual
+                binary = binarizar_adaptativo(denoised, block_size_adaptive, c_adaptive)
+                # Invertir si es necesario (fondo blanco)
+                if np.mean(binary) > 127:
+                    binary = 255 - binary
+                # Detectar bordes del binario
+                edges = cv2.Canny(binary, 50, 150)
+                edges = mejorar_bordes_morfologicos(edges, kernel_size=3)
+                
+            elif modo_deteccion == "Multi-Escala":
+                # Detección en múltiples escalas - mejor para detalles variados
+                edges = detectar_bordes_multi_escala(denoised, scales=[1.0, 0.5, 0.25])
+                edges = mejorar_bordes_morfologicos(edges, kernel_size=3)
+                
+            elif modo_deteccion == "Segmentación Automática":
+                # GrabCut para separar objeto del fondo
+                mask = segmentar_grabcut(original, iterations=grabcut_iterations)
+                # Detectar bordes de la máscara
+                edges = cv2.Canny(mask, 50, 150)
+                edges = mejorar_bordes_morfologicos(edges, kernel_size=5)
+
+            # Invertir bordes si está seleccionado
+            if invertir_bordes:
+                edges = 255 - edges
 
             # Mostrar resultados
             st.subheader("Resultados del Procesamiento")
@@ -294,7 +443,7 @@ with tab_vector:
             col_imgs[0].image(original, caption="Original", use_container_width=True)
             col_imgs[1].image(gray, caption="Grises", use_container_width=True)
             col_imgs[2].image(blurred, caption="Preprocesado", use_container_width=True)
-            col_imgs[3].image(edges, caption="Bordes", use_container_width=True)
+            col_imgs[3].image(edges, caption=f"Bordes ({modo_deteccion})", use_container_width=True)
 
             st.markdown("---")
             col_contour, col_3d = st.columns([1, 2])
@@ -306,16 +455,43 @@ with tab_vector:
                 # Usar kernel configurable para morfología
                 kernel_morph = np.ones((morph_kernel_size, morph_kernel_size), np.uint8)
                 
+                # Mapear nivel de simplificación
+                simplify_map = {
+                    "Ninguna": ("none", 0.0),
+                    "Baja": ("fixed", 0.0005),
+                    "Media": ("adaptive", 0.001),
+                    "Alta": ("fixed", 0.005)
+                }
+                simplify_method, epsilon_factor = simplify_map.get(simplificacion_contorno, ("adaptive", 0.001))
+                
+                # Configurar modo de múltiples contornos
+                multi_contour_mode = "single"  # Por defecto solo el más grande
+                if modo_contorno == "Todos los contornos (unidos)":
+                    multi_contour_mode = "union"
+                elif modo_contorno == "Todos los contornos (hull)":
+                    multi_contour_mode = "hull"
+                
                 # Obtener contorno con configuración avanzada
                 contour_config = {
-                    'simplify_method': 'adaptive',
-                    'epsilon_factor': 0.001,
-                    'min_area': 100,
-                    'morph_op': 'close'
+                    'simplify_method': simplify_method,
+                    'epsilon_factor': epsilon_factor,
+                    'min_area': min_area_contorno,
+                    'morph_op': 'close',
+                    'multi_contour_mode': multi_contour_mode,
+                    'trace_edges': trazar_bordes,
+                    'close_iterations': cierre_iteraciones,
+                    'close_kernel': 3,
+                    'adjust_to_edges': trazar_bordes,  # Ajustar a bordes cuando se trazan
+                    'search_radius': radio_ajuste
                 }
                 contour_points = get_contours(edges, kernel_morph, contour_config)
 
                 if len(contour_points) > 0:
+                    # Aplicar Convex Hull si está seleccionado
+                    if usar_hull:
+                        hull = cv2.convexHull(contour_points.reshape(-1, 1, 2).astype(np.int32))
+                        contour_points = hull.reshape(-1, 2).astype(np.float32)
+                    
                     # Aplicar mejoras al contorno
                     processed_contour = contour_points.copy()
                     
@@ -365,8 +541,16 @@ with tab_vector:
                 st.markdown("**🔷 Modelo 3D Extrusionado**")
 
                 if len(processed_contour) >= 3:
-                    # Ordenar y normalizar puntos
-                    ordered = sort_contour_points(processed_contour)
+                    # Mapear método de ordenamiento
+                    sort_method_map = {
+                        "Original (recomendado)": "original",
+                        "Angular (solo convexos)": "angular",
+                        "Optimizado": "optimized"
+                    }
+                    sort_method = sort_method_map.get(metodo_ordenamiento, "original")
+                    
+                    # Ordenar puntos del contorno
+                    ordered = sort_contour_points(processed_contour, method=sort_method)
                     
                     # Asegurar que el polígono esté cerrado
                     ordered = ensure_closed_polygon(ordered)
@@ -667,6 +851,26 @@ with tab_parametric:
                     param_r = st.slider("Radio menor (r)", 1.0, 4.0, 2.0)
                     param_k = st.slider("Frecuencia (k)", 1, 5, 3)
                     vertices_param, faces_param = SUPERFICIES[superficie_sel](R=param_R, r=param_r, k=param_k, resolution=param_resolution)
+                
+                elif superficie_sel == "enneper":
+                    param_size = st.slider("Tamaño", 0.5, 3.0, 1.5)
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](size=param_size, resolution=param_resolution)
+                
+                elif superficie_sel == "klein":
+                    st.info("💡 Botella de Klein: superficie no orientable sin borde")
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](resolution=param_resolution)
+                
+                elif superficie_sel == "nudo_trebol":
+                    st.info("💡 Nudo de trébol: curva 3D cerrada")
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](resolution=param_resolution * 5)
+                
+                elif superficie_sel == "nudo_figura_ocho":
+                    st.info("💡 Nudo figura-ocho: curva 3D cerrada")
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](resolution=param_resolution * 5)
+                
+                elif superficie_sel == "espiral_toroidal":
+                    st.info("💡 Espiral toroidal: curva sobre un toro")
+                    vertices_param, faces_param = SUPERFICIES[superficie_sel](resolution=param_resolution * 5)
                 
                 else:
                     # Para superficies sin parámetros especiales, llamar con solo resolution
