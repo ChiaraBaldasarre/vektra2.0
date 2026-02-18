@@ -147,12 +147,12 @@ def extrude_polygon(points_2d, height=1.0, triangulate=True):
 
 def create_plotly_mesh(vertices, faces, **kwargs):
     """
-    Crea diccionario de datos para Plotly Mesh3d.
+    Crea diccionario de datos para Plotly Mesh3d con opciones mejoradas.
     
     Args:
         vertices: Array de vértices 3D
         faces: Lista de caras (triángulos)
-        **kwargs: color, opacity, etc.
+        **kwargs: color, opacity, lighting, etc.
         
     Returns:
         Dict con datos para Plotly Mesh3d
@@ -161,6 +161,12 @@ def create_plotly_mesh(vertices, faces, **kwargs):
         return {}
     
     faces_array = np.array(faces)
+    
+    # Calcular normales para mejor iluminación
+    intensity = None
+    if kwargs.get('compute_intensity', True):
+        # Usar coordenada Z para intensidad (simula iluminación desde arriba)
+        intensity = vertices[:, 2].tolist()
     
     plotly_data = {
         'x': vertices[:, 0].tolist(),
@@ -171,8 +177,22 @@ def create_plotly_mesh(vertices, faces, **kwargs):
         'k': faces_array[:, 2].tolist(),
         'color': kwargs.get('color', 'lightblue'),
         'opacity': kwargs.get('opacity', 0.8),
-        'flatshading': True,
+        'flatshading': kwargs.get('flatshading', False),
+        'lighting': dict(
+            ambient=0.4,
+            diffuse=0.7,
+            specular=0.3,
+            roughness=0.5,
+            fresnel=0.2
+        ),
+        'lightposition': dict(x=100, y=200, z=300),
     }
+    
+    # Agregar intensidad si está disponible
+    if intensity and kwargs.get('use_intensity', False):
+        plotly_data['intensity'] = intensity
+        plotly_data['colorscale'] = kwargs.get('colorscale', 'Blues')
+        del plotly_data['color']
     
     return plotly_data
 
@@ -193,6 +213,7 @@ def ensure_closed_polygon(points, threshold=0.1):
     if len(points) < 3:
         return points
     
+    points = np.array(points, dtype=np.float64)
     first = points[0]
     last = points[-1]
     distance = np.linalg.norm(first - last)
@@ -201,3 +222,126 @@ def ensure_closed_polygon(points, threshold=0.1):
         return np.vstack([points, [points[0]]])
     
     return points
+
+
+def calcular_normales_vertices(vertices, faces):
+    """
+    Calcula las normales por vértice para mejor iluminación.
+    
+    Args:
+        vertices: Array de vértices 3D
+        faces: Lista de caras (triángulos)
+        
+    Returns:
+        Array de normales por vértice
+    """
+    normals = np.zeros_like(vertices)
+    
+    for face in faces:
+        v0, v1, v2 = vertices[face[0]], vertices[face[1]], vertices[face[2]]
+        
+        # Calcular normal de la cara
+        edge1 = v1 - v0
+        edge2 = v2 - v0
+        face_normal = np.cross(edge1, edge2)
+        
+        # Normalizar
+        norm = np.linalg.norm(face_normal)
+        if norm > 0:
+            face_normal /= norm
+        
+        # Acumular en cada vértice
+        for idx in face:
+            normals[idx] += face_normal
+    
+    # Normalizar todas las normales de vértices
+    for i in range(len(normals)):
+        norm = np.linalg.norm(normals[i])
+        if norm > 0:
+            normals[i] /= norm
+    
+    return normals
+
+
+def optimizar_triangulacion(points_2d, faces):
+    """
+    Optimiza la triangulación evitando triángulos degenerados.
+    
+    Args:
+        points_2d: Puntos 2D del polígono
+        faces: Lista de caras originales
+        
+    Returns:
+        Lista de caras optimizadas
+    """
+    optimized_faces = []
+    
+    for face in faces:
+        if len(face) != 3:
+            continue
+            
+        # Verificar que el triángulo no sea degenerado
+        p0, p1, p2 = points_2d[face[0]], points_2d[face[1]], points_2d[face[2]]
+        
+        # Calcular área del triángulo
+        area = abs(np.cross(p1 - p0, p2 - p0)) / 2
+        
+        # Solo incluir triángulos con área significativa
+        if area > 1e-8:
+            optimized_faces.append(face)
+    
+    return optimized_faces
+
+
+def crear_malla_suave(points_2d, height=1.0, subdivisions=1):
+    """
+    Crea una malla 3D con subdivisión para mayor suavidad.
+    
+    Args:
+        points_2d: Puntos 2D del polígono
+        height: Altura de extrusión
+        subdivisions: Número de subdivisiones en altura
+        
+    Returns:
+        Tuple (vértices, caras)
+    """
+    if len(points_2d) < 3:
+        return np.array([]), []
+    
+    n = len(points_2d)
+    vertices = []
+    faces = []
+    
+    # Crear vértices en múltiples niveles de Z
+    num_levels = subdivisions + 2  # Base + subdivisiones + tapa
+    z_levels = np.linspace(0, height, num_levels)
+    
+    for z in z_levels:
+        for point in points_2d:
+            vertices.append([point[0], point[1], z])
+    
+    vertices = np.array(vertices)
+    
+    # Caras laterales con subdivisiones
+    for level in range(num_levels - 1):
+        offset_bottom = level * n
+        offset_top = (level + 1) * n
+        
+        for i in range(n):
+            j = (i + 1) % n
+            
+            # Dos triángulos por cara lateral
+            faces.append([offset_bottom + i, offset_bottom + j, offset_top + i])
+            faces.append([offset_bottom + j, offset_top + j, offset_top + i])
+    
+    # Base y tapa usando triangulación
+    base_triangles = triangulate_polygon(points_2d)
+    
+    for tri in base_triangles:
+        # Base (invertir orientación)
+        faces.append([tri[0], tri[2], tri[1]])
+        # Tapa
+        top_offset = (num_levels - 1) * n
+        faces.append([top_offset + tri[0], top_offset + tri[1], top_offset + tri[2]])
+    
+    return vertices, faces

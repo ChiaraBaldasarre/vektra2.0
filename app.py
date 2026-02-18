@@ -16,8 +16,11 @@ from modules.image_processing import (
     detectar_umbrales_automaticos,
     mejorar_bordes_morfologicos
 )
-from modules.contours import get_contours, remuestrear_contorno, suavizar_contorno_media_movil
-from modules.extrusion import normalize_points, extrude_polygon, create_plotly_mesh, sort_contour_points
+from modules.contours import (
+    get_contours, remuestrear_contorno, suavizar_contorno_media_movil,
+    refinar_contorno_subpixel, calcular_curvatura, detectar_puntos_criticos
+)
+from modules.extrusion import normalize_points, extrude_polygon, create_plotly_mesh, sort_contour_points, ensure_closed_polygon
 from modules.primitives import get_cube, get_pyramid, get_sphere, get_cylinder, get_cone, get_prisma
 
 from modules.parametric import (
@@ -197,14 +200,92 @@ with tab_vector:
             value=0.8,
         )
 
-        # Crear kernel para operaciones morfológicas
-        # kernel_contour = np.ones((5, 5), np.uint8)
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🔧 Calidad de Malla")
 
-        # Procesar imagen
+        mejora_preprocesado = st.sidebar.checkbox(
+            "Preprocesado avanzado (CLAHE)",
+            value=True,
+            help="Mejora el contraste para detectar mejor los bordes"
+        )
+
+        metodo_denoise = st.sidebar.selectbox(
+            "Método de reducción de ruido",
+            ["Bilateral (recomendado)", "Gaussiano", "Mediana", "NL-Means (lento)"],
+            index=0,
+            help="Bilateral preserva bordes, NL-Means es el más preciso pero lento"
+        )
+
+        suavizar_contorno = st.sidebar.checkbox(
+            "Suavizar contorno",
+            value=True,
+            help="Aplica suavizado para eliminar ruido del contorno"
+        )
+
+        ventana_suavizado = st.sidebar.slider(
+            "Ventana de suavizado",
+            min_value=3,
+            max_value=15,
+            value=5,
+            step=2,
+            help="Mayor valor = contorno más suave"
+        ) if suavizar_contorno else 5
+
+        remuestrear = st.sidebar.checkbox(
+            "Remuestrear contorno",
+            value=True,
+            help="Distribuye los puntos uniformemente para mejor malla"
+        )
+
+        num_puntos_malla = st.sidebar.slider(
+            "Puntos de la malla",
+            min_value=50,
+            max_value=500,
+            value=150,
+            step=10,
+            help="Más puntos = mayor detalle pero más procesamiento"
+        ) if remuestrear else 0
+
+        morph_kernel_size = st.sidebar.slider(
+            "Tamaño kernel morfológico",
+            min_value=3,
+            max_value=15,
+            value=5,
+            step=2,
+            help="Afecta cómo se cierran los contornos"
+        )
+
+        # Mapear método de denoise
+        denoise_map = {
+            "Bilateral (recomendado)": "bilateral",
+            "Gaussiano": "gaussian",
+            "Mediana": "median",
+            "NL-Means (lento)": "nlmeans"
+        }
+        denoise_method = denoise_map.get(metodo_denoise, "bilateral")
+
+        # Procesar imagen con pipeline avanzado
         try:
-            original, gray, blurred, edges = procesar_imagen(
-                image_array, kernel_size, threshold1, threshold2
-            )
+            # Usar el procesamiento avanzado si está habilitado
+            if mejora_preprocesado:
+                config = {
+                    'enhance_contrast': True,
+                    'clahe_clip': 2.5,
+                    'denoise_method': denoise_method,
+                    'kernel_size': kernel_size,
+                    'auto_threshold': False,
+                    'threshold1': threshold1,
+                    'threshold2': threshold2
+                }
+                results = procesar_imagen_avanzado(image_array, config)
+                original = results['original']
+                gray = results['gray']
+                blurred = results.get('enhanced', results.get('denoised', gray))
+                edges = results['edges']
+            else:
+                original, gray, blurred, edges = procesar_imagen(
+                    image_array, kernel_size, threshold1, threshold2
+                )
 
             # Mostrar resultados
             st.subheader("Resultados del Procesamiento")
@@ -212,8 +293,8 @@ with tab_vector:
             col_imgs = st.columns(4)
             col_imgs[0].image(original, caption="Original", use_container_width=True)
             col_imgs[1].image(gray, caption="Grises", use_container_width=True)
-            col_imgs[2].image(blurred, caption="Blur", use_container_width=True)
-            col_imgs[3].image(edges, caption="Canny", use_container_width=True)
+            col_imgs[2].image(blurred, caption="Preprocesado", use_container_width=True)
+            col_imgs[3].image(edges, caption="Bordes", use_container_width=True)
 
             st.markdown("---")
             col_contour, col_3d = st.columns([1, 2])
@@ -221,29 +302,110 @@ with tab_vector:
             with col_contour:
 
                 st.markdown("**🔍 Contorno Detectado**")
-                contour_points = get_contours(edges, np.ones((5, 5), np.uint8))
+                
+                # Usar kernel configurable para morfología
+                kernel_morph = np.ones((morph_kernel_size, morph_kernel_size), np.uint8)
+                
+                # Obtener contorno con configuración avanzada
+                contour_config = {
+                    'simplify_method': 'adaptive',
+                    'epsilon_factor': 0.001,
+                    'min_area': 100,
+                    'morph_op': 'close'
+                }
+                contour_points = get_contours(edges, kernel_morph, contour_config)
 
                 if len(contour_points) > 0:
+                    # Aplicar mejoras al contorno
+                    processed_contour = contour_points.copy()
+                    
+                    # Suavizado del contorno
+                    if suavizar_contorno and len(processed_contour) > ventana_suavizado:
+                        processed_contour = suavizar_contorno_media_movil(
+                            processed_contour, 
+                            window=ventana_suavizado
+                        )
+                    
+                    # Remuestreo para distribución uniforme
+                    if remuestrear and num_puntos_malla > 0:
+                        processed_contour = remuestrear_contorno(
+                            processed_contour, 
+                            num_puntos_malla
+                        )
+                    
+                    # Visualizar contorno procesado
                     contour_display = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
-                    cv2.drawContours(contour_display, [contour_points.reshape(-1, 1, 2).astype(np.int32)], -1, (0, 255, 0), 2)
+                    
+                    # Dibujar contorno original en azul
+                    cv2.drawContours(
+                        contour_display, 
+                        [contour_points.reshape(-1, 1, 2).astype(np.int32)], 
+                        -1, (255, 100, 100), 1
+                    )
+                    
+                    # Dibujar contorno procesado en verde
+                    cv2.drawContours(
+                        contour_display, 
+                        [processed_contour.reshape(-1, 1, 2).astype(np.int32)], 
+                        -1, (0, 255, 0), 2
+                    )
+                    
                     st.image(contour_display, use_container_width=True)
-                    st.metric("Puntos", len(contour_points))
+                    
+                    col_m1, col_m2 = st.columns(2)
+                    col_m1.metric("Puntos originales", len(contour_points))
+                    col_m2.metric("Puntos malla", len(processed_contour))
 
                 else:
-                    st.warning("No se detectaron contornos.")
+                    processed_contour = np.array([])
+                    st.warning("No se detectaron contornos. Ajusta los umbrales.")
 
             with col_3d:
 
                 st.markdown("**🔷 Modelo 3D Extrusionado**")
 
-                if len(contour_points) >= 3:
-                    ordered = sort_contour_points(contour_points)
+                if len(processed_contour) >= 3:
+                    # Ordenar y normalizar puntos
+                    ordered = sort_contour_points(processed_contour)
+                    
+                    # Asegurar que el polígono esté cerrado
+                    ordered = ensure_closed_polygon(ordered)
+                    
+                    # Normalizar a tamaño estándar
                     norm = normalize_points(ordered, 2.0)
-                    vertices, faces = extrude_polygon(norm, height=extrusion_height, triangulate=True)
-                    mesh_data = create_plotly_mesh(vertices, faces, color=mesh_color, opacity=mesh_opacity)
-                    fig = go.Figure(data=[go.Mesh3d(**mesh_data)])
-                    fig.update_layout(scene=dict(aspectmode='data'), margin=dict(l=0, r=0, b=0, t=0), height=400)
-                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Extruir con triangulación
+                    vertices, faces = extrude_polygon(
+                        norm, 
+                        height=extrusion_height, 
+                        triangulate=True
+                    )
+                    
+                    # Crear malla para Plotly
+                    mesh_data = create_plotly_mesh(
+                        vertices, faces, 
+                        color=mesh_color, 
+                        opacity=mesh_opacity
+                    )
+                    
+                    if mesh_data:
+                        fig = go.Figure(data=[go.Mesh3d(**mesh_data)])
+                        fig.update_layout(
+                            scene=dict(
+                                aspectmode='data',
+                                xaxis=dict(showgrid=True, gridcolor='lightgray'),
+                                yaxis=dict(showgrid=True, gridcolor='lightgray'),
+                                zaxis=dict(showgrid=True, gridcolor='lightgray'),
+                            ),
+                            margin=dict(l=0, r=0, b=0, t=0),
+                            height=450
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Información de la malla
+                        st.caption(f"📊 Malla: {len(vertices)} vértices, {len(faces)} caras")
+                    else:
+                        st.warning("No se pudo crear la malla 3D")
 
                 else:
                     st.info("Cargando cubo de demostración...")
