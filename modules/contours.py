@@ -7,6 +7,196 @@ import cv2
 import numpy as np
 
 
+def combinar_contornos_ordenados(contours, method='connected'):
+    """
+    Combina múltiples contornos en uno solo de forma ordenada.
+    
+    Args:
+        contours: Lista de contornos
+        method: 'connected' (une por puntos cercanos) o 'concat' (simple concatenación)
+        
+    Returns:
+        Contorno combinado como array numpy
+    """
+    if len(contours) == 1:
+        return contours[0]
+    
+    if method == 'concat':
+        # Simple concatenación
+        all_points = np.vstack(contours)
+        return all_points
+    
+    # Método 'connected': conectar contornos por puntos más cercanos
+    # Ordenar contornos por área (del más grande al más pequeño)
+    sorted_contours = sorted(contours, key=cv2.contourArea, reverse=True)
+    
+    combined = sorted_contours[0].reshape(-1, 2).tolist()
+    remaining = [c.reshape(-1, 2) for c in sorted_contours[1:]]
+    
+    while remaining:
+        # Encontrar el contorno más cercano al final del combinado actual
+        last_point = np.array(combined[-1])
+        
+        min_dist = float('inf')
+        best_idx = 0
+        best_start_idx = 0
+        
+        for i, contour in enumerate(remaining):
+            # Buscar el punto más cercano en este contorno
+            distances = np.sqrt(np.sum((contour - last_point) ** 2, axis=1))
+            min_contour_dist = np.min(distances)
+            
+            if min_contour_dist < min_dist:
+                min_dist = min_contour_dist
+                best_idx = i
+                best_start_idx = np.argmin(distances)
+        
+        # Agregar el contorno más cercano, empezando desde el punto más cercano
+        next_contour = remaining.pop(best_idx)
+        
+        # Reordenar el contorno para empezar desde el punto más cercano
+        reordered = np.roll(next_contour, -best_start_idx, axis=0)
+        combined.extend(reordered.tolist())
+    
+    return np.array(combined).reshape(-1, 1, 2).astype(np.int32)
+
+
+def cerrar_bordes_adaptativo(edges, max_iterations=10, kernel_size=3):
+    """
+    Cierra los bordes de forma adaptativa usando dilatación iterativa.
+    Esto ayuda a conectar bordes que están ligeramente separados.
+    
+    Args:
+        edges: Imagen binaria de bordes
+        max_iterations: Máximo de iteraciones de dilatación
+        kernel_size: Tamaño del kernel de dilatación
+        
+    Returns:
+        Imagen con bordes cerrados
+    """
+    kernel = np.ones((kernel_size, kernel_size), np.uint8)
+    closed = edges.copy()
+    
+    for i in range(max_iterations):
+        # Dilatar para conectar bordes cercanos
+        dilated = cv2.dilate(closed, kernel, iterations=1)
+        
+        # Encontrar contornos
+        contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if contours:
+            # Verificar si el contorno más grande tiene un área razonable
+            max_contour = max(contours, key=cv2.contourArea)
+            area = cv2.contourArea(max_contour)
+            perimeter = cv2.arcLength(max_contour, True)
+            
+            # Si el perímetro es razonable respecto al área, tenemos un contorno cerrado
+            if perimeter > 0 and area > 0:
+                # Circularidad: 4*pi*area / perimeter^2 - más cercano a 1 = más cerrado
+                circularity = 4 * np.pi * area / (perimeter * perimeter)
+                if circularity > 0.01:  # Umbral bajo para aceptar formas variadas
+                    closed = dilated
+                    break
+        
+        closed = dilated
+    
+    return closed
+
+
+def extraer_contorno_preciso(edges, max_iterations=10, kernel_size=3):
+    """
+    Extrae el contorno siguiendo los bordes originales con mayor precisión.
+    Usa dilatación para cerrar huecos, luego erosiona para compensar.
+    
+    Args:
+        edges: Imagen binaria de bordes
+        max_iterations: Máximo de iteraciones de dilatación
+        kernel_size: Tamaño del kernel
+        
+    Returns:
+        Contorno que sigue los bordes originales
+    """
+    kernel = np.ones((kernel_size, kernel_size), np.uint8)
+    
+    # Paso 1: Dilatar para conectar bordes
+    dilated = cv2.dilate(edges, kernel, iterations=max_iterations)
+    
+    # Paso 2: Rellenar huecos internos usando flood fill
+    h, w = dilated.shape
+    filled = dilated.copy()
+    
+    # Crear máscara para flood fill (debe ser 2 pixels más grande)
+    mask = np.zeros((h + 2, w + 2), np.uint8)
+    
+    # Flood fill desde las esquinas (asumiendo fondo negro)
+    cv2.floodFill(filled, mask, (0, 0), 255)
+    
+    # Invertir para obtener el área interior
+    filled_inv = cv2.bitwise_not(filled)
+    
+    # Combinar con la imagen dilatada original
+    filled_shape = dilated | filled_inv
+    
+    # Paso 3: Erosionar para compensar la dilatación
+    # Erosionamos un poco menos de lo que dilatamos para mantener contorno cerrado
+    erosion_iterations = max(1, max_iterations - 2)
+    eroded = cv2.erode(filled_shape, kernel, iterations=erosion_iterations)
+    
+    # Paso 4: Aplicar cierre morfológico final para suavizar
+    closed = cv2.morphologyEx(eroded, cv2.MORPH_CLOSE, kernel)
+    
+    # Paso 5: Extraer solo el borde exterior (esqueletizar)
+    # Erosionar una vez más y restar para obtener solo el contorno
+    inner = cv2.erode(closed, kernel, iterations=1)
+    contour_edge = closed - inner
+    
+    return closed, contour_edge
+
+
+def ajustar_contorno_a_bordes(contour_points, edges, search_radius=5):
+    """
+    Ajusta cada punto del contorno al borde más cercano en la imagen de bordes.
+    
+    Args:
+        contour_points: Array de puntos del contorno (N, 2)
+        edges: Imagen binaria de bordes originales
+        search_radius: Radio de búsqueda para el borde más cercano
+        
+    Returns:
+        Contorno ajustado
+    """
+    if len(contour_points) == 0:
+        return contour_points
+    
+    adjusted = []
+    h, w = edges.shape
+    
+    for point in contour_points:
+        x, y = int(point[0]), int(point[1])
+        
+        # Definir región de búsqueda
+        x_min = max(0, x - search_radius)
+        x_max = min(w, x + search_radius + 1)
+        y_min = max(0, y - search_radius)
+        y_max = min(h, y + search_radius + 1)
+        
+        # Buscar píxeles de borde en la región
+        region = edges[y_min:y_max, x_min:x_max]
+        edge_pixels = np.where(region > 0)
+        
+        if len(edge_pixels[0]) > 0:
+            # Encontrar el píxel de borde más cercano
+            edge_coords = np.column_stack((edge_pixels[1] + x_min, edge_pixels[0] + y_min))
+            distances = np.sqrt(np.sum((edge_coords - np.array([x, y])) ** 2, axis=1))
+            nearest_idx = np.argmin(distances)
+            adjusted.append(edge_coords[nearest_idx])
+        else:
+            # Si no hay borde cercano, mantener el punto original
+            adjusted.append([x, y])
+    
+    return np.array(adjusted, dtype=np.float32)
+
+
 def get_contours(edges, kernel, config=None):
     """
     Extrae el contorno principal de una imagen de bordes.
@@ -19,6 +209,10 @@ def get_contours(edges, kernel, config=None):
             - epsilon_factor: float para simplificación
             - min_area: área mínima del contorno
             - smooth_contour: bool
+            - use_tree: bool, usar RETR_TREE para jerarquía completa
+            - trace_edges: bool, trazar bordes directamente en vez de buscar contornos cerrados
+            - adjust_to_edges: bool, ajustar puntos al borde más cercano
+            - search_radius: int, radio de búsqueda para ajuste
             
     Returns:
         Array de puntos (n, 2) en el orden del contorno
@@ -26,13 +220,30 @@ def get_contours(edges, kernel, config=None):
     if config is None:
         config = {}
     
-    # 1. Operaciones morfológicas para mejorar contornos
-    closed_edges = aplicar_morfologia(edges, kernel, config.get('morph_op', 'close'))
+    # Guardar bordes originales para ajuste posterior
+    original_edges = edges.copy()
     
-    # 2. Encontrar contornos
+    # Opción para trazar bordes directamente (mejor para dibujos lineales)
+    trace_edges = config.get('trace_edges', False)
+    
+    if trace_edges:
+        # Usar extracción precisa que compensa la dilatación
+        closed_edges, _ = extraer_contorno_preciso(
+            edges, 
+            max_iterations=config.get('close_iterations', 5),
+            kernel_size=config.get('close_kernel', 3)
+        )
+    else:
+        # 1. Operaciones morfológicas para mejorar contornos
+        closed_edges = aplicar_morfologia(edges, kernel, config.get('morph_op', 'close'))
+    
+    # 2. Encontrar contornos - usar RETR_TREE para obtener jerarquía completa si se requiere
+    use_tree = config.get('use_tree', False)
+    retrieval_mode = cv2.RETR_TREE if use_tree else cv2.RETR_EXTERNAL
+    
     contours, hierarchy = cv2.findContours(
         closed_edges,
-        cv2.RETR_EXTERNAL,      # Solo contorno externo
+        retrieval_mode,
         cv2.CHAIN_APPROX_NONE   # Mantener TODOS los puntos
     )
     
@@ -46,8 +257,19 @@ def get_contours(edges, kernel, config=None):
     if not contours:
         return np.array([])
     
-    # 4. Seleccionar contorno principal
-    main_contour = max(contours, key=cv2.contourArea)
+    # 4. Seleccionar contorno(s) según configuración
+    multi_contour_mode = config.get('multi_contour_mode', 'single')
+    
+    if multi_contour_mode == 'union':
+        # Unir todos los contornos de forma conectada (mantiene formas individuales)
+        main_contour = combinar_contornos_ordenados(contours, method='connected')
+    elif multi_contour_mode == 'hull':
+        # Crear el convex hull que envuelve todos los contornos
+        all_points = np.vstack(contours)
+        main_contour = cv2.convexHull(all_points)
+    else:
+        # 'single' - Solo el contorno más grande
+        main_contour = max(contours, key=cv2.contourArea)
     
     # 5. Simplificación adaptativa
     simplify_method = config.get('simplify_method', 'adaptive')
@@ -64,6 +286,12 @@ def get_contours(edges, kernel, config=None):
     
     # 6. Convertir a array 2D
     points = approx.reshape(-1, 2)
+    
+    # 7. Ajustar puntos al borde original más cercano (NUEVO)
+    adjust_to_edges = config.get('adjust_to_edges', True)  # Activado por defecto
+    if adjust_to_edges and trace_edges:
+        search_radius = config.get('search_radius', 10)
+        points = ajustar_contorno_a_bordes(points, original_edges, search_radius)
     
     return points
 
