@@ -20,7 +20,7 @@
    git clone [https://github.com/tu-usuario/vektra.git](https://github.com/tu-usuario/vektra.git)
    cd vektra
    python -m venv venv
-   source venv/bin/activate  # Windows: venv\Scripts\activate
+   source venv/bin/activate  # Windows: source venv/Scripts/activate
 
 2. **Instalar dependencias:**
    ```bash
@@ -47,6 +47,18 @@ Transforma una fotografía en un sólido 3D detectando sus bordes exteriores. El
 3. Detección de bordes con Canny.
 4. Generación de malla 3D mediante extrusión de los puntos detectados.
 
+3. **Funciones Sonoras (Síntesis de Fourier)**
+
+Visualiza la construcción procedural de señales de audio complejas mediante la superposición armónica de ondas sinusoidales.
+Permite evaluar interactivamente el impacto del número de armónicos (N) en el modelado geométrico y topológico de 6 ondas del catálogo clásico:
+
+1. **Onda Cuadrada:** Sumatoria estándar de armónicos impares
+2. **Onda Diente de Sierra:** Progresión lineal armónica.
+3. **Onda Triangular:** Atenuación cuadrática con signos alternados.
+4. **Tren de Pulsos:** Modulación simétrica de alta frecuencia.
+5. **Sierra Asimétrica:** Modulación progresiva impar.
+6. **Pulso Cuadrático:** Sumatoria compleja con decaimiento cuadrático exponencial.
+
 ---
 
 ## 🖼️ Evidencia de Ejecución ##
@@ -57,6 +69,10 @@ Muestra de superficies complejas generadas mediante el sistema:
 
 * **Superficies:** Botella de Klein, Helicoides, Sillas de montar.
 * **Render:** Totalmente interactivo en el navegador.
+
+**🎵 Modo Funciones Sonoras**
+
+Generación de espectros tridimensionales y curvas analíticas 2D acopladas a ecuaciones matemáticas dinámicas en LaTeX.
 
 ### *[!TIP]* ###
 Si el modelo 3D aparece invertido o con inconsistencias en las caras, revisa la función *sort_contour_points* en *extrusion.py* o el orden de puntos en *contours.py*.
@@ -77,7 +93,8 @@ Seguimos una metodología estricta basada en tickets para mantener la trazabilid
 ---
 
 ## 📂 Estructura del Proyecto ##
-* **/modules:** Lógica de procesamiento (Canny, Paramétricos, Primitivas).
-* **/assets:** Almacenamiento de imágenes de prueba y capturas de pantalla.
-* **command_parser.py:** Punto de entrada para comandos de texto.
-* **visualization.py:** Configuración de renderizado con Plotly.
+* **/modules/geometry:** Contiene las capas core de modelado matemático (primitives.py, parametric.py, extrusion.py y fourier.py).
+* **/modules/vision:** Procesamiento digital de imágenes y extracción de contornos (image_processing.py, contours.py).
+* **/ui:** Vistas modulares de la interfaz de usuario en Streamlit (tab_*.py).
+* **app.py:** Punto de entrada principal del layout general de la aplicación.
+* **requirements.txt:** Archivo de especificación de dependencias del entorno.
