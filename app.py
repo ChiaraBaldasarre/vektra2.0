@@ -4,6 +4,7 @@ from ui.tab_vectorizer import render_vectorizer
 from ui.tab_primitives import render_primitives
 from ui.tab_code import render_code_editor
 from ui.tab_parametric import render_parametric
+from ui.tab_sound_functions import render_sound_functions
 
 st.set_page_config(page_title="Vektra", layout="wide")
 
@@ -14,7 +15,8 @@ def main():
         "Vectorizador de Imagen",
         "Generador de Figuras Primitivas",
         "Editor por Código",
-        "Superficies Matemáticas"
+        "Superficies Matemáticas",
+        "Series de Fourier"
     ])
 
     with tabs[0]:
@@ -28,6 +30,9 @@ def main():
 
     with tabs[3]:
         render_parametric()
+
+    with tabs[4]:
+        render_sound_functions()
 
 if __name__ == "__main__":
     main()
