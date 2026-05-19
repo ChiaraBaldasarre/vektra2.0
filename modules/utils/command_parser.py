@@ -1,5 +1,5 @@
 import re
-from modules.primitives import (
+from modules.geometry.primitives import (
     get_cube, get_sphere, get_cylinder,
     get_cone, get_pyramid, get_prisma
 )

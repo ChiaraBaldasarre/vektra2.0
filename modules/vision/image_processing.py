@@ -6,7 +6,6 @@ Implementa técnicas avanzadas de preprocesamiento y detección.
 import cv2
 import numpy as np
 
-
 def convertir_a_escala_grises(image_array):
     """
     Convierte una imagen RGB a escala de grises.
@@ -368,4 +367,3 @@ def segmentar_grabcut(image_rgb, rect=None, iterations=5):
     except:
         # Si falla, devolver máscara completa
         return np.ones((h, w), np.uint8) * 255
-
