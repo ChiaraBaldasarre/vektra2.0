@@ -3,7 +3,9 @@ Módulo de extrusión 3D.
 Contiene funciones para normalizar puntos, extruir polígonos y crear mallas para Plotly.
 """
 
+# pyrefly: ignore [missing-import]
 import numpy as np
+# pyrefly: ignore [missing-import]
 from scipy.spatial import Delaunay
 
 
@@ -88,19 +90,27 @@ def triangulate_polygon(points_2d):
         return []
 
 
-def extrude_polygon(points_2d, height=1.0, triangulate=True):
+# Maximum number of points for Delaunay triangulation of caps.
+# Above this threshold, cap triangulation is skipped (lateral faces only)
+# to avoid O(n log n) slowdown on complex SVG paths.
+_MAX_TRIANGULATION_POINTS = 800
+
+
+def extrude_polygon(points_2d, height=1.0, triangulate=True, closed=True):
     """
-    Extruye un polígono 2D a 3D con triangulación correcta para formas cóncavas.
+    Extruye un polígono 2D a 3D con triangulación correcta para formas cóncavas o cintas abiertas.
     
     Args:
         points_2d: Array de puntos 2D del polígono
         height: Altura de extrusión
         triangulate: Si usar triangulación para formas cóncavas
+        closed: Si el camino es cerrado (si es Falso, no une inicio y fin ni añade tapas)
         
     Returns:
         Tuple (vértices, caras)
     """
-    if len(points_2d) < 3:
+    min_points = 3 if closed else 2
+    if len(points_2d) < min_points:
         return np.array([]), []
     
     n = len(points_2d)
@@ -115,32 +125,36 @@ def extrude_polygon(points_2d, height=1.0, triangulate=True):
     faces = []
     
     # Caras laterales
-    for i in range(n):
+    limit = n if closed else n - 1
+    for i in range(limit):
         j = (i + 1) % n
         faces.append([i, j, i + n])
         faces.append([j, j + n, i + n])
     
-    # Base y tapa
-    if triangulate and n > 3:
-        base_triangles = triangulate_polygon(points_2d)
-        for tri in base_triangles:
-            faces.append([tri[0], tri[2], tri[1]])
-        
-        for tri in base_triangles:
-            faces.append([tri[0] + n, tri[1] + n, tri[2] + n])
-    else:
-        if n == 3:
-            faces.append([0, 2, 1])
-            faces.append([n, n+1, n+2])
-        elif n == 4:
-            faces.append([0, 1, 2])
-            faces.append([0, 2, 3])
-            faces.append([n, n+2, n+1])
-            faces.append([n, n+3, n+2])
+    # Base y tapa (solo si es cerrado)
+    if closed:
+        # Skip Delaunay for large polygons: too slow and often degenerate
+        can_triangulate = triangulate and n > 3 and n <= _MAX_TRIANGULATION_POINTS
+        if can_triangulate:
+            base_triangles = triangulate_polygon(points_2d)
+            for tri in base_triangles:
+                faces.append([tri[0], tri[2], tri[1]])
+            
+            for tri in base_triangles:
+                faces.append([tri[0] + n, tri[1] + n, tri[2] + n])
         else:
-            for i in range(1, n - 1):
-                faces.append([0, i, i + 1])
-                faces.append([n, n + i + 1, n + i])
+            if n == 3:
+                faces.append([0, 2, 1])
+                faces.append([n, n+1, n+2])
+            elif n == 4:
+                faces.append([0, 1, 2])
+                faces.append([0, 2, 3])
+                faces.append([n, n+2, n+1])
+                faces.append([n, n+3, n+2])
+            else:
+                for i in range(1, n - 1):
+                    faces.append([0, i, i + 1])
+                    faces.append([n, n + i + 1, n + i])
     
     return vertices, faces
 
