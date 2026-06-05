@@ -21,7 +21,8 @@ from modules.image_processing import (
 )
 from modules.contours import (
     get_contours, remuestrear_contorno, suavizar_contorno_media_movil,
-    refinar_contorno_subpixel, calcular_curvatura, detectar_puntos_criticos
+    refinar_contorno_subpixel, calcular_curvatura, detectar_puntos_criticos,
+    procesar_contorno_robusto
 )
 from modules.extrusion import normalize_points, extrude_polygon, create_plotly_mesh, sort_contour_points, ensure_closed_polygon
 from modules.primitives import get_cube, get_pyramid, get_sphere, get_cylinder, get_cone, get_prisma
@@ -296,7 +297,7 @@ with tab_vector:
         
         modo_contorno = st.sidebar.selectbox(
             "Modo de contorno",
-            ["Solo el más grande", "Todos los contornos (unidos)", "Todos los contornos (hull)"],
+            ["Solo el más grande", "Todos los contornos (separados)" , "Todos los contornos (unidos)", "Todos los contornos (hull)"],
             index=0,
             help="Elige cómo manejar múltiples objetos en la imagen"
         )
@@ -433,6 +434,26 @@ with tab_vector:
                 edges = mejorar_bordes_morfologicos(edges, kernel_size=5)
 
             # Invertir bordes si está seleccionado
+
+            kernel_morph = np.ones((morph_kernel_size, morph_kernel_size), np.uint8)
+            if trazar_bordes:
+                edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel_morph, iterations=cierre_iteraciones)
+            else:
+                edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel_morph)
+
+            # 2. Forzar el Área Mínima borrando la basura pequeña de la imagen principal
+            contours_raw, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            mask_area = np.zeros_like(edges)
+            for cnt in contours_raw:
+                if cv2.contourArea(cnt) >= min_area_contorno:
+                    # Rellenar con blanco solo las formas que cumplen el tamaño mínimo
+                    cv2.drawContours(mask_area, [cnt], -1, 255, -1)
+
+            # Borrar de la imagen original todo lo que no esté en la máscara (las basuras)
+            edges = cv2.bitwise_and(edges, mask_area)
+
+            # --- FIN DE CORRECCIÓN ---
+
             if invertir_bordes:
                 edges = 255 - edges
 
@@ -451,129 +472,248 @@ with tab_vector:
             with col_contour:
 
                 st.markdown("**🔍 Contorno Detectado**")
-                
-                # Usar kernel configurable para morfología
                 kernel_morph = np.ones((morph_kernel_size, morph_kernel_size), np.uint8)
-                
-                # Mapear nivel de simplificación
+
                 simplify_map = {
-                    "Ninguna": ("none", 0.0),
-                    "Baja": ("fixed", 0.0005),
-                    "Media": ("adaptive", 0.001),
-                    "Alta": ("fixed", 0.005)
+                    "Ninguna": ("none", 0.0), "Baja": ("fixed", 0.0005),
+                    "Media": ("adaptive", 0.001), "Alta": ("fixed", 0.005)
                 }
                 simplify_method, epsilon_factor = simplify_map.get(simplificacion_contorno, ("adaptive", 0.001))
-                
-                # Configurar modo de múltiples contornos
-                multi_contour_mode = "single"  # Por defecto solo el más grande
-                if modo_contorno == "Todos los contornos (unidos)":
-                    multi_contour_mode = "union"
-                elif modo_contorno == "Todos los contornos (hull)":
-                    multi_contour_mode = "hull"
-                
-                # Obtener contorno con configuración avanzada
-                contour_config = {
-                    'simplify_method': simplify_method,
-                    'epsilon_factor': epsilon_factor,
-                    'min_area': min_area_contorno,
-                    'morph_op': 'close',
-                    'multi_contour_mode': multi_contour_mode,
-                    'trace_edges': trazar_bordes,
-                    'close_iterations': cierre_iteraciones,
-                    'close_kernel': 3,
-                    'adjust_to_edges': trazar_bordes,  # Ajustar a bordes cuando se trazan
-                    'search_radius': radio_ajuste
-                }
-                contour_points = get_contours(edges, kernel_morph, contour_config)
 
-                if len(contour_points) > 0:
-                    # Aplicar Convex Hull si está seleccionado
-                    if usar_hull:
-                        hull = cv2.convexHull(contour_points.reshape(-1, 1, 2).astype(np.int32))
-                        contour_points = hull.reshape(-1, 2).astype(np.float32)
-                    
-                    # Aplicar mejoras al contorno
-                    processed_contour = contour_points.copy()
-                    
-                    # Suavizado del contorno
-                    if suavizar_contorno and len(processed_contour) > ventana_suavizado:
-                        processed_contour = suavizar_contorno_media_movil(
-                            processed_contour, 
-                            window=ventana_suavizado
+                multi_contour_mode = "single"
+                if modo_contorno == "Todos los contornos (unidos)": multi_contour_mode = "union"
+                elif modo_contorno == "Todos los contornos (hull)": multi_contour_mode = "hull"
+                elif modo_contorno == "Todos los contornos (separados)": multi_contour_mode = "separate"
+
+                processed_contours_list = []
+                contour_display = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+
+                if multi_contour_mode == "separate":
+
+
+                    edges_procesados = edges.copy()
+                    if trazar_bordes:
+                        edges_procesados = cv2.morphologyEx(
+                            edges_procesados,
+                            cv2.MORPH_CLOSE,
+                            kernel_morph,
+                            iterations=cierre_iteraciones
                         )
-                    
-                    # Remuestreo para distribución uniforme
-                    if remuestrear and num_puntos_malla > 0:
-                        processed_contour = remuestrear_contorno(
-                            processed_contour, 
-                            num_puntos_malla
-                        )
-                    
-                    # Visualizar contorno procesado
-                    contour_display = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
-                    
-                    # Dibujar contorno original en azul
-                    cv2.drawContours(
-                        contour_display, 
-                        [contour_points.reshape(-1, 1, 2).astype(np.int32)], 
-                        -1, (255, 100, 100), 1
-                    )
-                    
-                    # Dibujar contorno procesado en verde
-                    cv2.drawContours(
-                        contour_display, 
-                        [processed_contour.reshape(-1, 1, 2).astype(np.int32)], 
-                        -1, (0, 255, 0), 2
-                    )
-                    
+                    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    for cnt in contours:
+                        if cv2.contourArea(cnt) >= min_area_contorno:
+                            # 1. Simplificar
+                            c_pts = procesar_contorno_robusto(cnt)
+                            epsilon = epsilon_factor * cv2.arcLength(cnt, True)
+                            approx = cv2.approxPolyDP(cnt, epsilon, True)
+                            c_pts = approx.reshape(-1, 2).astype(np.float32)
+
+                            # 2. Suavizado
+                            if suavizar_contorno and len(c_pts) > ventana_suavizado:
+                                c_pts = suavizar_contorno_media_movil(c_pts, window=ventana_suavizado)
+                                c_pts = suavizar_contorno_media_movil(c_pts, window=ventana_suavizado)
+
+                            # 3. Remuestreo
+                            if remuestrear and num_puntos_malla > 0:
+                                c_pts = remuestrear_contorno(c_pts, num_puntos_malla)
+
+                            # 4. Escudo de seguridad de NumPy
+                            if c_pts is not None and len(c_pts) >= 3:
+                                c_pts = c_pts.reshape(-1, 2) # Forzar exactamente 2 dimensiones (X,Y)
+                                processed_contours_list.append(c_pts)
+                                cv2.drawContours(contour_display, [c_pts.reshape(-1, 1, 2).astype(np.int32)], -1, (0, 255, 0), 2)
+
                     st.image(contour_display, use_container_width=True)
-                    
-                    col_m1, col_m2 = st.columns(2)
-                    col_m1.metric("Puntos originales", len(contour_points))
-                    col_m2.metric("Puntos malla", len(processed_contour))
+                    st.metric("Objetos independientes", len(processed_contours_list))
 
                 else:
-                    processed_contour = np.array([])
-                    st.warning("No se detectaron contornos. Ajusta los umbrales.")
+                    contour_config = {
+                        'simplify_method': simplify_method, 'epsilon_factor': epsilon_factor,
+                        'min_area': min_area_contorno, 'morph_op': 'close',
+                        'multi_contour_mode': multi_contour_mode, 'trace_edges': trazar_bordes,
+                        'close_iterations': cierre_iteraciones, 'close_kernel': 3,
+                        'adjust_to_edges': trazar_bordes, 'search_radius': radio_ajuste
+                    }
+                    contour_points = get_contours(edges, kernel_morph, contour_config)
+
+                    if contour_points is not None and len(contour_points) > 0:
+                        # 1. Estandarizar la variable principal
+                        pts = contour_points.reshape(-1, 2).astype(np.float32)
+
+                        # 2. Aplicar Convex Hull de forma secuencial
+                        if usar_hull:
+                            hull = cv2.convexHull(pts.reshape(-1, 1, 2).astype(np.int32))
+                            pts = hull.reshape(-1, 2).astype(np.float32)
+
+                        # 3. Aplicar Suavizado
+                        if suavizar_contorno and len(pts) > ventana_suavizado:
+                            pts = suavizar_contorno_media_movil(pts, window=ventana_suavizado)
+
+                        # 4. Aplicar Remuestreo
+                        if remuestrear and num_puntos_malla > 0:
+                            pts = remuestrear_contorno(pts, num_puntos_malla)
+
+                        # 5. Escudo de seguridad antes de pasar a la extrusión 3D
+                        if pts is not None and len(pts) >= 3:
+                            pts = pts.reshape(-1, 2) # Forzar exactamente 2 dimensiones (X,Y)
+                            processed_contours_list.append(pts)
+
+                            # Dibujar en la UI (Azul = detección base, Verde = malla final ajustada)
+                            cv2.drawContours(contour_display, [contour_points.reshape(-1, 1, 2).astype(np.int32)], -1, (255, 100, 100), 1)
+                            cv2.drawContours(contour_display, [pts.reshape(-1, 1, 2).astype(np.int32)], -1, (0, 255, 0), 2)
+                            st.image(contour_display, use_container_width=True)
+                        else:
+                            st.warning("⚠️ Los ajustes eliminaron la geometría. Reduce la simplificación o desactiva el remuestreo.")
+                    else:
+                        st.warning("No se detectaron contornos. Ajusta los umbrales.")
 
             with col_3d:
 
                 st.markdown("**🔷 Modelo 3D Extrusionado**")
+                mapa_orden = {
+                    "Original (recomendado)" : "original",
+                    "Angular (solo convexos)": "angular",
+                    "Optimizado":"optimized"
+                }
 
-                if len(processed_contour) >= 3:
-                    # Mapear método de ordenamiento
-                    sort_method_map = {
-                        "Original (recomendado)": "original",
-                        "Angular (solo convexos)": "angular",
-                        "Optimizado": "optimized"
-                    }
-                    sort_method = sort_method_map.get(metodo_ordenamiento, "original")
-                    
-                    # Ordenar puntos del contorno
-                    ordered = sort_contour_points(processed_contour, method=sort_method)
-                    
-                    # Asegurar que el polígono esté cerrado
-                    ordered = ensure_closed_polygon(ordered)
-                    
-                    # Normalizar a tamaño estándar
-                    norm = normalize_points(ordered, 2.0)
-                    
-                    # Extruir con triangulación
-                    vertices, faces = extrude_polygon(
-                        norm, 
-                        height=extrusion_height, 
-                        triangulate=True
-                    )
-                    
-                    # Crear malla para Plotly
-                    mesh_data = create_plotly_mesh(
-                        vertices, faces, 
-                        color=mesh_color, 
-                        opacity=mesh_opacity
-                    )
-                    
-                    if mesh_data:
-                        fig = go.Figure(data=[go.Mesh3d(**mesh_data)])
+                metodo_orden_interno = mapa_orden.get(metodo_ordenamiento, "original")
+                if len(processed_contours_list) > 0:
+                    fig = go.Figure()
+                    total_vertices = 0
+                    total_faces = 0
+
+                    # 1. Calcular el centro global de todas las formas para mantener su posición relativa
+                    all_pts = np.vstack(processed_contours_list)
+                    min_coords = np.min(all_pts, axis=0)
+                    max_coords = np.max(all_pts, axis=0)
+                    scale = 2.0 / max(1e-5, np.max(max_coords - min_coords))
+                    center_global = (min_coords + max_coords) / 2.0
+
+                    # Función interna para extruir polígonos complejos con soporte para agujeros
+                    def extruir_con_agujeros(outer, holes_list, height=0.5):
+                        vertices = []
+                        faces = []
+
+                        # Asegurar polígono cerrado y ordenado para el contorno exterior
+                        outer = sort_contour_points(outer, method="original")
+                        outer = ensure_closed_polygon(outer)
+                        outer_norm = (outer - center_global) * scale
+                        n_outer = len(outer_norm)
+
+                        # Procesar y normalizar los agujeros
+                        norm_holes = []
+                        for h in holes_list:
+                            h_sorted = sort_contour_points(h, method=metodo_orden_interno)
+                            h_closed = ensure_closed_polygon(h_sorted)
+                            norm_holes.append((h_closed - center_global) * scale)
+
+                        # --- A. Paredes del contorno exterior ---
+                        for p in outer_norm:
+                            vertices.append([p[0], p[1], 0.0])       # Base
+                        for p in outer_norm:
+                            vertices.append([p[0], p[1], height])    # Tapa
+                        for i in range(n_outer):
+                            j = (i + 1) % n_outer
+                            faces.append([i, j, i + n_outer])
+                            faces.append([j, j + n_outer, i + n_outer])
+
+                        vertex_offset = 2 * n_outer
+
+                        # --- B. Paredes de los agujeros internos ---
+                        for h_norm in norm_holes:
+                            n_h = len(h_norm)
+                            for p in h_norm:
+                                vertices.append([p[0], p[1], 0.0])   # Base del agujero
+                            for p in h_norm:
+                                vertices.append([p[0], p[1], height]) # Tapa del agujero
+                            for i in range(n_h):
+                                j = (i + 1) % n_h
+                                base_i = vertex_offset + i
+                                base_j = vertex_offset + j
+                                top_i = vertex_offset + i + n_h
+                                top_j = vertex_offset + j + n_h
+                                # Invertimos el orden de las caras para que miren hacia adentro del hueco
+                                faces.append([base_i, top_i, base_j])
+                                faces.append([base_j, top_i, top_j])
+                            vertex_offset += 2 * n_h
+
+                        # --- C. Tapas con sustracción de agujeros usando Delaunay ---
+                        all_lists = [outer_norm] + norm_holes
+                        flat_pts = np.vstack(all_lists)
+
+                        # Mapear índices planos a los índices de nuestros vértices 3D
+                        base_map = []
+                        top_map = []
+                        for i in range(n_outer):
+                            base_map.append(i)
+                            top_map.append(i + n_outer)
+
+                        curr_offset = 2 * n_outer
+                        for h_norm in norm_holes:
+                            n_h = len(h_norm)
+                            for i in range(n_h):
+                                base_map.append(curr_offset + i)
+                                top_map.append(curr_offset + i + n_h)
+                            curr_offset += 2 * n_h
+
+                        # Calcular la triangulación conjunta de Delaunay
+                        from scipy.spatial import Delaunay
+                        tri = Delaunay(flat_pts)
+
+                        for triangle in tri.simplices:
+                            # Calcular el centro matemático (centroide) del triángulo
+                            centroid = np.mean(flat_pts[triangle], axis=0)
+
+                            # Validar que esté ADENTRO del exterior pero AFUERA de todos los agujeros
+                            inside_outer = cv2.pointPolygonTest(outer_norm.astype(np.float32), (float(centroid[0]), float(centroid[1])), False) >= 0
+                            if inside_outer:
+                                inside_hole = False
+                                for h_norm in norm_holes:
+                                    if cv2.pointPolygonTest(h_norm.astype(np.float32), (float(centroid[0]), float(centroid[1])), False) > 0:
+                                        inside_hole = True
+                                        break
+                                # Si cumple la condición de donut, agregamos el triángulo a la base y la tapa
+                                if not inside_hole:
+                                    faces.append([base_map[triangle[0]], base_map[triangle[2]], base_map[triangle[1]]])
+                                    faces.append([top_map[triangle[0]], top_map[triangle[1]], top_map[triangle[2]]])
+
+                        return np.array(vertices), faces
+
+                    # 2. Agrupación espacial jerárquica automática (Padres vs Agujeros)
+                    valid_contours = [pc for pc in processed_contours_list if len(pc) >= 3]
+                    # Ordenar por área de mayor a menor para procesar figuras envolventes primero
+                    sorted_contours = sorted(valid_contours, key=lambda c: cv2.contourArea(c.astype(np.float32)), reverse=True)
+
+                    outer_shapes = []
+                    assigned = np.zeros(len(sorted_contours), dtype=bool)
+
+                    for i, c_ext in enumerate(sorted_contours):
+                        if assigned[i]:
+                            continue
+                        holes = []
+                        for j in range(i + 1, len(sorted_contours)):
+                            if assigned[j]:
+                                continue
+                            # Probar si el primer punto del contorno j está dentro del contorno i
+                            test_pt = sorted_contours[j][0]
+                            is_inside = cv2.pointPolygonTest(c_ext.astype(np.float32), (float(test_pt[0]), float(test_pt[1])), False) >= 0
+                            if is_inside:
+                                holes.append(sorted_contours[j])
+                                assigned[j] = True
+                        outer_shapes.append((c_ext, holes))
+                        assigned[i] = True
+
+                    # 3. Generar las mallas 3D finales
+                    for outer, holes in outer_shapes:
+                        vertices, faces = extruir_con_agujeros(outer, holes, height=extrusion_height)
+                        mesh_data = create_plotly_mesh(vertices, faces, color=mesh_color, opacity=mesh_opacity)
+
+                        if mesh_data:
+                            fig.add_trace(go.Mesh3d(**mesh_data))
+                            total_vertices += len(vertices)
+                            total_faces += len(faces)
+
+                    if len(fig.data) > 0:
                         fig.update_layout(
                             scene=dict(
                                 aspectmode='data',
@@ -585,16 +725,12 @@ with tab_vector:
                             height=450
                         )
                         st.plotly_chart(fig, use_container_width=True)
-                        
-                        # Información de la malla
-                        st.caption(f"📊 Malla: {len(vertices)} vértices, {len(faces)} caras")
+                        st.caption(f"📊 Malla Compleja: {total_vertices} vértices, {total_faces} caras en {len(fig.data)} figuras estructuradas")
                     else:
                         st.warning("No se pudo crear la malla 3D")
-
                 else:
                     st.info("Cargando cubo de demostración...")
                     st.plotly_chart(generar_cubo_3d(), use_container_width=True)
-
         except Exception as e:
             st.error(f"Error: {e}")
     else:
