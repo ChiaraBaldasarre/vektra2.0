@@ -6,6 +6,31 @@ Implementa múltiples algoritmos para obtener contornos precisos.
 import cv2
 import numpy as np
 
+# --- 1. FUNCIONES NUEVAS DE LA HISTORIA DE USUARIO ---
+
+def asegurar_contorno_cerrado(contour, tolerancia=2.0):
+    cnt = contour.reshape(-1, 2)
+    dist = np.linalg.norm(cnt[0] - cnt[-1])
+    if dist > tolerancia:
+        return np.vstack([cnt, cnt[0]])
+    return cnt
+
+def simplificar_contorno_optimo(contour, factor=0.002):
+    epsilon = factor * cv2.arcLength(contour, True)
+    return cv2.approxPolyDP(contour, epsilon, True)
+
+def corregir_orientacion(contour, sentido_horario=True):
+    area = cv2.contourArea(contour, oriented=True)
+    if (sentido_horario and area > 0) or (not sentido_horario and area < 0):
+        return contour[::-1]
+    return contour
+
+def procesar_contorno_robusto(contour):
+    """Pipeline maestro de limpieza"""
+    c = simplificar_contorno_optimo(contour)
+    c = asegurar_contorno_cerrado(c)
+    c = corregir_orientacion(c)
+    return c.astype(np.float32)
 
 def combinar_contornos_ordenados(contours, method='connected'):
     """

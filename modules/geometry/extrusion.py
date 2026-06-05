@@ -2,8 +2,12 @@
 Módulo de extrusión 3D.
 Contiene funciones para normalizar puntos, extruir polígonos y crear mallas para Plotly.
 """
+<<<<<<< HEAD:modules/geometry/extrusion.py
 
 # pyrefly: ignore [missing-import]
+=======
+import cv2
+>>>>>>> main:modules/extrusion.py
 import numpy as np
 # pyrefly: ignore [missing-import]
 from scipy.spatial import Delaunay
@@ -69,25 +73,29 @@ def is_point_inside_polygon(point, polygon):
 
 
 def triangulate_polygon(points_2d):
-    """Triangula un polígono 2D (puede ser cóncavo)."""
+    #funcion nueva
     if len(points_2d) < 3:
         return []
-    
-    try:
-        tri = Delaunay(points_2d)
-        
-        # Filtrar triángulos que están fuera del polígono
-        triangles = []
-        for simplex in tri.simplices:
-            triangle_points = points_2d[simplex]
-            centroid = triangle_points.mean(axis=0)
-            
-            if is_point_inside_polygon(centroid, points_2d):
-                triangles.append(simplex.tolist())
-        
-        return triangles
-    except Exception:
-        return []
+
+    delaunay = Delaunay(points_2d)
+    triangles = []
+
+    contour = np.array(points_2d, dtype=np.float32).reshape(-1, 1, 2)
+    for simplex in delaunay.simplices:
+            pt1 = points_2d[simplex[0]]
+            pt2 = points_2d[simplex[1]]
+            pt3 = points_2d[simplex[2]]
+
+            # Calcular el centroide (punto medio) del triángulo
+            cx = (pt1[0] + pt2[0] + pt3[0]) / 3.0
+            cy = (pt1[1] + pt2[1] + pt3[1]) / 3.0
+
+            # pointPolygonTest devuelve >0 si está dentro, 0 en el borde, <0 si está fuera
+            if cv2.pointPolygonTest(contour, (float(cx), float(cy)), False) >= 0:
+                triangles.append(simplex)
+
+    return triangles
+
 
 
 # Maximum number of points for Delaunay triangulation of caps.
