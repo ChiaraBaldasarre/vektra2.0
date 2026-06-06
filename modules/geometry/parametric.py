@@ -701,13 +701,13 @@ def _crear_tubo_desde_curva(x, y, z, radio_tubo=0.1, resolution_tubo=12):
     return vertices, faces
 
 
-def crear_mesh_plotly(vertices, faces, color='#9b59b6', opacity=0.85, name='Paramétrica'):
+def crear_mesh_plotly(vertices, faces, color_map='Viridis', opacity=0.85, name='Paramétrica'):
     """Crea diccionario compatible con Plotly Mesh3d."""
     if len(vertices) == 0 or len(faces) == 0:
         return {}
     
     faces_array = np.array(faces)
-    
+
     return {
         'x': vertices[:, 0].tolist(),
         'y': vertices[:, 1].tolist(),
@@ -715,10 +715,12 @@ def crear_mesh_plotly(vertices, faces, color='#9b59b6', opacity=0.85, name='Para
         'i': faces_array[:, 0].tolist(),
         'j': faces_array[:, 1].tolist(),
         'k': faces_array[:, 2].tolist(),
-        'color': color,
         'opacity': opacity,
         'name': name,
         'flatshading': False,  # Suave para superficies matemáticas
+        'intensity': vertices[:, 2].tolist(), # Define el color basado en la altura Z
+        'colorscale': color_map,             # Aplica el mapa seleccionado
+        'showscale': True
     }
 
 
