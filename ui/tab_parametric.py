@@ -49,8 +49,7 @@ def render_parametric():
             )
 
             param_resolution = st.slider("Resolución", 20, 100, 50, key="param_res")
-            param_color = st.color_picker("Color", value="#9b59b6", key="param_color")
-            param_opacity = st.slider("Opacidad", 0.1, 1.0, 0.85, key="param_opacity")
+
 
             with st.expander("📐 Ver fórmula"):
                 st.code(EJEMPLOS_FORMULAS, language="python")
@@ -247,18 +246,25 @@ def render_parametric():
 
     with col_vista:
         st.markdown("**🔷 Visualización 3D**")
+        param_cmap = st.selectbox(
+            "Mapa de Colores",
+            ["Viridis", "Plasma", "Inferno", "Magma", "Cividis"],
+            key="cmap_selector"
+        )
 
+        param_opacity = st.slider("Opacidad", 0.0, 1.0, 0.85)
         if len(vertices_param) > 0 and len(faces_param) > 0:
             mesh_param = crear_mesh_parametrico(
                 vertices_param, faces_param,
-                color=param_color, opacity=param_opacity,
+                color_map=param_cmap,
+                opacity=param_opacity,
                 name="Superficie"
             )
 
             fig_param = go.Figure(data=[go.Mesh3d(**mesh_param)])
             fig_param.data[0].update(
                 intensity=vertices_param[:, 2],
-                colorscale='Viridis', showscale=True, colorbar=dict(title="Z")
+                colorscale= param_cmap, showscale=True, colorbar=dict(title="Z")
             )
 
             fig_param.update_layout(
