@@ -68,17 +68,30 @@ def render_vectorizer():
         colors_list = ["#1E90FF", "#FF4500", "#32CD32", "#FFD700", "#FF1493", "#8A2BE2", "#00FFFF"]
 
         if is_svg:
-            # SVG Pipeline UI Sidebar
-            mostrar_contorno_exterior = st.sidebar.toggle(
+            # SVG Pipeline - Sliders dentro de la pestaña
+            st.subheader("Parámetros de Extrusión 3D")
+            col1, col2 = st.columns(2)
+            with col1:
+                extrusion_height = st.slider("Altura de extrusión", 0.1, 3.0, 1.0, 0.1)
+                mesh_opacity = st.slider("Opacidad", 0.1, 1.0, 0.8)
+            with col2:
+                color_mode = st.selectbox("Esquema de color", ["Monocromático", "Paleta de colores"], index=1)
+                if color_mode == "Monocromático":
+                    mesh_color = st.color_picker("Color de la malla", "#1E90FF")
+                else:
+                    mesh_color = "#1E90FF"
+
+            st.markdown("---")
+            mostrar_contorno_exterior = st.toggle(
                 "Mostrar Contorno Exterior",
                 value=False,
                 help="Agrega un segundo modelo 3D usando solo el path más grande del SVG."
             )
 
-            st.sidebar.markdown("---")
-            st.sidebar.subheader("Parametros de Curvas SVG")
-            bezier_res = st.sidebar.slider("Resolución curvas Bézier", 5, 100, 30, help="Puntos por segmento Bézier")
+            st.markdown("---")
+            bezier_res = st.slider("Resolución curvas Bézier", 5, 100, 30, help="Número de puntos por segmento de curva Bézier")
 
+            # --- SVG Compatibility Guide ---
             with st.expander("Guía de compatibilidad SVG", expanded=False):
                 st.markdown("""
 | Tipo de SVG | Compatibilidad | Resultado 3D |
@@ -95,7 +108,10 @@ def render_vectorizer():
                 if not elements:
                     st.warning("El archivo SVG no contiene elementos geométricos válidos compatibles.")
                 else:
-                    all_pts = [elem['points'] for elem in elements if len(elem['points']) > 0]
+                    all_pts = []
+                    for elem in elements:
+                        if len(elem['points']) > 0:
+                            all_pts.append(elem['points'])
 
                     if all_pts:
                         all_pts_concat = np.concatenate(all_pts, axis=0)
@@ -112,27 +128,46 @@ def render_vectorizer():
                         if n < 3: return 0.0
                         return 0.5 * abs(np.dot(pts[:, 0], np.roll(pts[:, 1], -1)) - np.dot(pts[:, 1], np.roll(pts[:, 0], -1)))
 
+                    def extrude_robust(pts_2d, height, closed):
+                        verts, faces = extrude_polygon(pts_2d, height=height, triangulate=True, closed=closed)
+                        if len(verts) > 0 and len(faces) > 0:
+                            return verts, faces
+                        return extrude_polygon(pts_2d, height=height, triangulate=False, closed=closed)
+
                     def subsample_path(pts, max_points=500):
-                        if len(pts) <= max_points: return pts
-                        indices = np.round(np.linspace(0, len(pts) - 1, max_points)).astype(int)
+                        n = len(pts)
+                        if n <= max_points:
+                            return pts
+                        indices = np.round(np.linspace(0, n - 1, max_points)).astype(int)
                         return pts[indices]
 
-                    # 2D Preview Wireframe
                     st.subheader("Visualización del Vector 2D (Wireframe)")
                     fig2d = go.Figure()
+                    colors_list = ["#1E90FF", "#FF4500", "#32CD32", "#FFD700", "#FF1493", "#8A2BE2", "#00FFFF"]
+
                     for i, elem in enumerate(elements):
                         pts = elem['points']
                         if len(pts) > 0:
-                            pts_plot = np.vstack([pts, pts[0]]) if elem['closed'] else pts
+                            if elem['closed']:
+                                pts_plot = np.vstack([pts, pts[0]])
+                            else:
+                                pts_plot = pts
+                            color_idx = i % len(colors_list)
                             fig2d.add_trace(go.Scatter(
                                 x=pts_plot[:, 0].tolist(), y=pts_plot[:, 1].tolist(),
                                 mode='lines+markers', line=dict(width=2, color=colors_list[i % len(colors_list)]),
                                 marker=dict(size=4), name=f"{elem['type']} #{i+1}"
                             ))
-                    fig2d.update_layout(yaxis=dict(autorange="reversed", scaleanchor="x", scaleratio=1), height=400)
+
+                    fig2d.update_layout(
+                        yaxis=dict(autorange="reversed", scaleanchor="x", scaleratio=1),
+                        xaxis=dict(constrain="domain"),
+                        margin=dict(l=10, r=10, t=10, b=10),
+                        height=400,
+                        showlegend=True
+                    )
                     st.plotly_chart(fig2d, use_container_width=True)
 
-                    # ---- 3D Extrusion Pipeline ----
                     st.markdown("---")
                     st.subheader("Modelo 3D Extrusionado")
 
@@ -146,19 +181,7 @@ def render_vectorizer():
                             scaled_pts = pts * scale_factor
                             scaled_pts[:, 1] = -scaled_pts[:, 1]
                             scaled_pts = subsample_path(scaled_pts)
-
-                            # Construcción de la Configuración del motor POO para el elemento
-                            config_elem = ExtrusionConfig(
-                                height=extrusion_height,
-                                opacity=mesh_opacity,
-                                color=mesh_color if color_mode == "Monocromático" else colors_list[i % len(colors_list)],
-                                closed=elem['closed'],
-                                suavizado_de_cara=suavizar_caras_solicitado,
-                                subdivisions=2 if suavizar_caras_solicitado else 1
-                            )
-                            extruder = Extruder(config=config_elem)
-                            vertices, faces = extruder.process(scaled_pts)
-
+                            vertices, faces = extrude_robust(scaled_pts, height=extrusion_height, closed=elem['closed'])
                             if len(vertices) > 0 and len(faces) > 0:
                                 total_vertices += len(vertices)
                                 total_faces += len(faces)
@@ -183,6 +206,31 @@ def render_vectorizer():
                     else:
                         st.warning("No se pudo extruir ninguno de los trazados del SVG.")
 
+                    if mostrar_contorno_exterior:
+                        st.markdown("---")
+                        st.subheader("Contorno Exterior — Path más grande")
+                        closed_elems = [e for e in elements if e['closed'] and len(e['points']) >= 3]
+                        source_list = closed_elems if closed_elems else elements
+                        largest_elem = max(source_list, key=lambda e: compute_polygon_area(e['points']))
+                        st.caption(f"Path seleccionado: {len(largest_elem['points'])} puntos")
+                        pts_ext = largest_elem['points'].copy() * scale_factor
+                        pts_ext[:, 1] = -pts_ext[:, 1]
+                        pts_ext = subsample_path(pts_ext)
+                        verts_ext, faces_ext = extrude_robust(pts_ext, height=extrusion_height, closed=largest_elem['closed'])
+                        if len(verts_ext) > 0 and len(faces_ext) > 0:
+                            color_ext = mesh_color if color_mode == "Monocromático" else "#1E90FF"
+                            mesh_ext = create_plotly_mesh(verts_ext, faces_ext, color=color_ext, opacity=mesh_opacity)
+                            if mesh_ext:
+                                fig_ext = go.Figure(data=[go.Mesh3d(**mesh_ext)])
+                                fig_ext.update_layout(
+                                    scene=dict(aspectmode='data', xaxis=dict(showgrid=True),
+                                               yaxis=dict(showgrid=True), zaxis=dict(showgrid=True)),
+                                    margin=dict(l=0, r=0, b=0, t=0), height=500
+                                )
+                                st.plotly_chart(fig_ext, use_container_width=True)
+                        else:
+                            st.warning("No se pudo extruir el contorno exterior.")
+
             except Exception as e:
                 import traceback
                 st.error(f"Error procesando SVG: {e}")
@@ -193,39 +241,74 @@ def render_vectorizer():
             image = Image.open(uploaded_file)
             image_array = np.array(image.convert('RGB'))
 
-            st.sidebar.subheader("Parametros de Deteccion Canny")
-            kernel_size = st.sidebar.slider("Kernel (Desenfoque)", 1, 31, 5, step=2)
-            threshold1 = st.sidebar.slider("Umbral Bajo (Canny)", 0, 200, 50)
-            threshold2 = st.sidebar.slider("Umbral Alto (Canny)", threshold1 + 10, 500, 150)
+            # ========== SLIDERS DENTRO DE LA PESTAÑA (NO EN SIDEBAR) ==========
+            st.subheader("Parámetros de Detección Canny")
 
-            st.sidebar.markdown("---")
-            modo_deteccion = st.sidebar.selectbox("Modo de detección", ["Canny Estándar", "Umbral Adaptativo", "Multi-Escala", "Segmentación Automática"])
+            col1, col2 = st.columns(2)
+            with col1:
+                kernel_size = st.slider("Tamaño del kernel", 1, 31, 5, 2)
+                threshold1 = st.slider("Umbral Bajo", 0, 200, 50)
+            with col2:
+                threshold2 = st.slider("Umbral Alto", threshold1 + 10, 500, 150)
+                extrusion_height = st.slider("Altura extrusión", 0.1, 3.0, 1.0, 0.1)
 
-            block_size_adaptive, c_adaptive, grabcut_iterations = 11, 2, 5
-            if modo_deteccion == "Umbral Adaptativo":
-                block_size_adaptive = st.sidebar.slider("Tamaño bloque adaptativo", 3, 51, 11, 2)
-                c_adaptive = st.sidebar.slider("Constante C", -10, 20, 2)
-            elif modo_deteccion == "Segmentación Automática":
-                grabcut_iterations = st.sidebar.slider("Iteraciones GrabCut", 1, 10, 5)
+            mesh_color = st.color_picker("Color de la malla", "#1E90FF")
+            mesh_opacity = st.slider("Opacidad", 0.1, 1.0, 0.8)
 
-            mejora_preprocesado = st.sidebar.checkbox("Preprocesado avanzado (CLAHE)", True)
-            metodo_denoise = st.sidebar.selectbox("Reducción de ruido", ["Bilateral (recomendado)", "Gaussiano", "Mediana"])
-            suavizar_contorno = st.sidebar.checkbox("Suavizar contorno", True)
-            ventana_suavizado = st.sidebar.slider("Ventana de suavizado", 3, 15, 5, 2) if suavizar_contorno else 5
-            remuestrear = st.sidebar.checkbox("Remuestrear contorno", True)
-            num_puntos_malla = st.sidebar.slider("Puntos de la malla", 50, 500, 150, 10) if remuestrear else 0
+            st.markdown("---")
 
-            st.sidebar.markdown("---")
-            modo_contorno = st.sidebar.selectbox("Modo de contorno", ["Solo el más grande", "Todos los contornos (unidos)"], index=0)
-            morph_kernel_size = st.sidebar.slider("Kernel morfológico", 3, 21, 5, 2)
-            min_area_contorno = st.sidebar.slider("Área mínima contorno", 10, 5000, 100, 50)
-            simplificacion_contorno = st.sidebar.select_slider("Simplificación", options=["Ninguna", "Baja", "Media", "Alta"], value="Baja")
-            invertir_bordes = st.sidebar.checkbox("Invertir bordes", False)
-            trazar_bordes = st.sidebar.checkbox("Trazar bordes", True)
-            cierre_iteraciones = st.sidebar.slider("Iteraciones de cierre", 1, 20, 8) if trazar_bordes else 5
-            radio_ajuste = st.sidebar.slider("Radio de ajuste", 1, 30, 15) if trazar_bordes else 10
-            usar_hull = st.sidebar.checkbox("Usar Convex Hull", False)
-            metodo_ordenamiento = st.sidebar.selectbox("Orden de puntos", ["Original (recomendado)", "Angular (solo convexos)", "Optimizado"])
+            # Configuración avanzada en expander
+            with st.expander("Configuración avanzada (opcional)"):
+                modo_deteccion = st.selectbox(
+                    "Modo de detección",
+                    ["Canny Estándar", "Umbral Adaptativo", "Multi-Escala", "Segmentación Automática"],
+                    index=0
+                )
+
+                block_size_adaptive = 11
+                c_adaptive = 2
+                grabcut_iterations = 5
+
+                if modo_deteccion == "Umbral Adaptativo":
+                    block_size_adaptive = st.slider("Tamaño de bloque adaptativo", 3, 51, 11, 2)
+                    c_adaptive = st.slider("Constante C", -10, 20, 2)
+
+                if modo_deteccion == "Segmentación Automática":
+                    st.info("GrabCut separa automáticamente el objeto del fondo")
+                    grabcut_iterations = st.slider("Iteraciones GrabCut", 1, 10, 5)
+
+                mejora_preprocesado = st.checkbox("Preprocesado avanzado (CLAHE)", True)
+                metodo_denoise = st.selectbox("Método de reducción de ruido",
+                                              ["Bilateral (recomendado)", "Gaussiano", "Mediana", "NL-Means (lento)"],
+                                              index=0)
+
+                suavizar_contorno = st.checkbox("Suavizar contorno", True)
+                ventana_suavizado = st.slider("Ventana de suavizado", 3, 15, 5, 2) if suavizar_contorno else 5
+
+                remuestrear = st.checkbox("Remuestrear contorno", True)
+                num_puntos_malla = st.slider("Puntos de la malla", 50, 500, 150, 10) if remuestrear else 0
+
+                modo_contorno = st.selectbox("Modo de contorno", ["Solo el más grande", "Todos los contornos (unidos)",
+                                                                  "Todos los contornos (hull)"], index=0)
+                morph_kernel_size = st.slider("Tamaño kernel morfológico", 3, 21, 5, 2)
+                min_area_contorno = st.slider("Área mínima del contorno", 10, 5000, 100, 50)
+                simplificacion_contorno = st.select_slider("Simplificación del contorno",
+                                                           options=["Ninguna", "Baja", "Media", "Alta"], value="Baja")
+
+                invertir_bordes = st.checkbox("Invertir bordes", False)
+                trazar_bordes = st.checkbox("Trazar bordes (mejor para dibujos)", True)
+
+                if trazar_bordes:
+                    cierre_iteraciones = st.slider("Iteraciones de cierre", 1, 20, 8)
+                    radio_ajuste = st.slider("Radio de ajuste a bordes", 1, 30, 15)
+                else:
+                    cierre_iteraciones = 5
+                    radio_ajuste = 10
+
+                usar_hull = st.checkbox("Usar Convex Hull", False)
+                metodo_ordenamiento = st.selectbox("Orden de puntos",
+                                                   ["Original (recomendado)", "Angular (solo convexos)", "Optimizado"],
+                                                   index=0)
 
             denoise_map = {"Bilateral (recomendado)": "bilateral", "Gaussiano": "gaussian", "Mediana": "median"}
             denoise_method = denoise_map.get(metodo_denoise, "bilateral")
@@ -260,10 +343,10 @@ def render_vectorizer():
 
                 st.subheader("Resultados del Procesamiento")
                 col_imgs = st.columns(4)
-                col_imgs[0].image(original, caption="Original", width="stretch")
-                col_imgs[1].image(gray, caption="Grises", width="stretch")
-                col_imgs[2].image(denoised, caption="Preprocesado", width="stretch")
-                col_imgs[3].image(edges, caption=f"Bordes", width="stretch")
+                col_imgs[0].image(original, caption="Original", use_container_width=True)
+                col_imgs[1].image(gray, caption="Grises", use_container_width=True)
+                col_imgs[2].image(blurred, caption="Preprocesado", use_container_width=True)
+                col_imgs[3].image(edges, caption=f"Bordes ({modo_deteccion})", use_container_width=True)
 
                 st.markdown("---")
                 col_contour, col_3d = st.columns([1, 2])
@@ -293,9 +376,16 @@ def render_vectorizer():
                             processed_contour = remuestrear_contorno(processed_contour, num_puntos_malla)
 
                         contour_display = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
-                        cv2.drawContours(contour_display, [contour_points.reshape(-1, 1, 2).astype(np.int32)], -1, (255, 100, 100), 1)
-                        cv2.drawContours(contour_display, [processed_contour.reshape(-1, 1, 2).astype(np.int32)], -1, (0, 255, 0), 2)
-                        st.image(contour_display, width="stretch")
+                        cv2.drawContours(contour_display, [contour_points.reshape(-1, 1, 2).astype(np.int32)], -1,
+                                         (255, 100, 100), 1)
+                        cv2.drawContours(contour_display, [processed_contour.reshape(-1, 1, 2).astype(np.int32)], -1,
+                                         (0, 255, 0), 2)
+
+                        st.image(contour_display, use_container_width=True)
+
+                        col_m1, col_m2 = st.columns(2)
+                        col_m1.metric("Puntos originales", len(contour_points))
+                        col_m2.metric("Puntos malla", len(processed_contour))
                     else:
                         processed_contour = np.array([])
                         st.warning("No se detectaron contornos.")
@@ -321,14 +411,13 @@ def render_vectorizer():
 
                         if mesh_data:
                             fig = go.Figure(data=[go.Mesh3d(**mesh_data)])
-                            fig.update_layout(scene=dict(aspectmode='data'), height=450, margin=dict(l=0, r=0, b=0, t=0))
+                            fig.update_layout(
+                                scene=dict(aspectmode='data', xaxis=dict(showgrid=True), yaxis=dict(showgrid=True),
+                                           zaxis=dict(showgrid=True)),
+                                margin=dict(l=0, r=0, b=0, t=0), height=450
+                            )
                             st.plotly_chart(fig, use_container_width=True)
-
-                            # Métricas en pantalla para imágenes
-                            st.markdown("##### Métricas Geométricas del Sólido")
-                            c1, c2 = st.columns(2)
-                            c1.metric("Volumen", f"{extruder.calculate_volume(vertices, faces):.4f} u³")
-                            c2.metric("Área Superficial", f"{extruder.calculate_surface_area(vertices, faces):.4f} u²")
+                            st.caption(f"Malla: {len(vertices)} vértices, {len(faces)} caras")
                         else:
                             st.warning("No se pudo crear la malla 3D")
                     else:
@@ -338,4 +427,4 @@ def render_vectorizer():
             except Exception as e:
                 st.error(f"Error en procesamiento de imagen: {e}")
     else:
-        st.info("👆 Carga una imagen para comenzar")
+        st.info("Carga una imagen para comenzar")
