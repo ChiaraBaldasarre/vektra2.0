@@ -35,7 +35,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV="C:\Users\NicolasDominguezBeja\OneDrive\Documentos\Jala university\Calculo 2\Capstone\vektra2.0\.venv"
+VIRTUAL_ENV="D:\Calculo 2\Capstone\vektra2.0\.venv"
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"
