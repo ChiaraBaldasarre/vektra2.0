@@ -3,7 +3,7 @@ import plotly.graph_objects as go
 from modules.geometry.fourier import calcular_onda_sonora, extruir_onda_a_malla_3d
 
 def render_sound_functions():
-    st.subheader("Funciones Sonoras Procedurales")
+    st.subheader("Funciones Procedurales")
     st.markdown("Visualización geométrica de ondas armónicas complejas por Series de Fourier.")
 
     col_controles, col_graficos = st.columns([1, 2])
