@@ -8,7 +8,7 @@ if defined _OLD_CODEPAGE (
     "%SystemRoot%\System32\chcp.com" 65001 > nul
 )
 
-set VIRTUAL_ENV=C:\Users\NicolasDominguezBeja\OneDrive\Documentos\Jala university\Calculo 2\Capstone\vektra2.0\.venv
+set VIRTUAL_ENV=D:\Calculo 2\Capstone\vektra2.0\.venv
 
 if not defined PROMPT set PROMPT=$P$G
 
