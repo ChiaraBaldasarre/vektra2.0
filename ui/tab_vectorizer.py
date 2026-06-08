@@ -11,10 +11,11 @@ import traceback
 
 from modules.utils.visualization import generar_cubo_3d
 from modules.vision.image_processing import (
+    KERNEL_MORPH,
     convertir_a_escala_grises, aplicar_desenfoque_gaussiano,
     detectar_bordes_canny, aplicar_clahe, aplicar_filtro_bilateral,
     aplicar_desenfoque_mediana, aplicar_nlmeans, detectar_umbrales_automaticos,
-    mejorar_bordes_morfologicos, binarizar_adaptativo, segmentar_grabcut,
+    binarizar_adaptativo, segmentar_grabcut,
     detectar_bordes_multi_escala
 )
 from modules.vision.contours import (
@@ -58,7 +59,7 @@ def render_vectorizer():
         col1, col2 = st.columns(2)
         with col1:
             extrusion_height = st.slider("Altura de extrusión", 0.1, 3.0, 1.0, 0.1)
-            mesh_opacity = st.slider("Opacidad", 0.1, 1.0, 0.8)
+            mesh_opacity = st.slider("Opacidad", 0.1, 1.0, 0.8, key="opacity_svg")
         with col2:
             color_mode = st.selectbox("Esquema de color", ["Monocromático", "Paleta de colores"], index=1)
             if color_mode == "Monocromático":
@@ -239,7 +240,7 @@ def render_vectorizer():
                 extrusion_height = st.slider("Altura extrusión", 0.1, 3.0, 1.0, 0.1)
 
             mesh_color = st.color_picker("Color de la malla", "#1E90FF")
-            mesh_opacity = st.slider("Opacidad", 0.1, 1.0, 0.8)
+            mesh_opacity = st.slider("Opacidad", 0.1, 1.0, 0.8, key="opacity_img")
 
             st.markdown("---")
 
@@ -302,19 +303,15 @@ def render_vectorizer():
 
                 if modo_deteccion == "Canny Estándar":
                     edges = detectar_bordes_canny(denoised, threshold1, threshold2)
-                    edges = mejorar_bordes_morfologicos(edges, kernel_size=3)
                 elif modo_deteccion == "Umbral Adaptativo":
                     binary = binarizar_adaptativo(denoised, block_size_adaptive, c_adaptive)
                     if np.mean(binary) > 127: binary = 255 - binary
                     edges = cv2.Canny(binary, 50, 150)
-                    edges = mejorar_bordes_morfologicos(edges, kernel_size=3)
                 elif modo_deteccion == "Multi-Escala":
                     edges = detectar_bordes_multi_escala(denoised, scales=[1.0, 0.5, 0.25])
-                    edges = mejorar_bordes_morfologicos(edges, kernel_size=3)
                 else:
                     mask = segmentar_grabcut(original, iterations=grabcut_iterations)
                     edges = cv2.Canny(mask, 50, 150)
-                    edges = mejorar_bordes_morfologicos(edges, kernel_size=5)
 
                 if invertir_bordes: edges = 255 - edges
 
