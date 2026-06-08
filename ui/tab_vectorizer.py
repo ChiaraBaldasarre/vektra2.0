@@ -59,7 +59,7 @@ def render_vectorizer():
         col1, col2 = st.columns(2)
         with col1:
             extrusion_height = st.slider("Altura de extrusión", 0.1, 3.0, 1.0, 0.1)
-            mesh_opacity = st.slider("Opacidad", 0.1, 1.0, 0.8)
+            mesh_opacity = st.slider("Opacidad", 0.1, 1.0, 0.8, key="opacity_svg")
         with col2:
             color_mode = st.selectbox("Esquema de color", ["Monocromático", "Paleta de colores"], index=1)
             if color_mode == "Monocromático":
@@ -240,7 +240,7 @@ def render_vectorizer():
                 extrusion_height = st.slider("Altura extrusión", 0.1, 3.0, 1.0, 0.1)
 
             mesh_color = st.color_picker("Color de la malla", "#1E90FF")
-            mesh_opacity = st.slider("Opacidad", 0.1, 1.0, 0.8)
+            mesh_opacity = st.slider("Opacidad", 0.1, 1.0, 0.8, key="opacity_img")
 
             st.markdown("---")
 
