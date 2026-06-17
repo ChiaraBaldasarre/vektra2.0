@@ -1,8 +1,18 @@
-.idea/
+# Entornos virtuales
+.venv/
 venv/
 env/
+
+# Archivos de Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Configuración de IDEs
+.idea/
+.vscode/
+*.iml
+
+# Archivos del sistema
 .DS_Store
-vektra.iml
-.vscode
